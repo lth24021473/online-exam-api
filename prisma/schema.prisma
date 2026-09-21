@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum ShowtimeStatus {
+  SCHEDULED
+  CANCELLED
+  FINISHED
+}
+
+model User {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Movie {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  title           String
+  description     String?
+  durationMinutes Int
+  genre           String?
+  releaseDate     DateTime?
+  posterUrl       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  showtimes Showtime[]
+}
+
+model Cinema {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  address   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rooms Room[]
+}
+
+model Room {
+  id   String @id @default(auto()) @map("_id") @db.ObjectId
+  name String
+
+  cinemaId String @db.ObjectId
+  cinema   Cinema @relation(fields: [cinemaId], references: [id])
+
+  seats     Seat[]
+  showtimes Showtime[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cinemaId])
+}
+
+model Seat {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  row    String
+  number Int
+
+  roomId String @db.ObjectId
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  bookingSeats BookingSeat[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roomId, row, number])
+  @@index([roomId])
+}
+
+model Showtime {
+  id        String         @id @default(auto()) @map("_id") @db.ObjectId
+  startTime DateTime
+  endTime   DateTime
+  price     Float
+  status    ShowtimeStatus @default(SCHEDULED)
+
+  movieId String @db.ObjectId
+  movie   Movie  @relation(fields: [movieId], references: [id])
+
+  roomId String @db.ObjectId
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  bookings     Booking[]
+  bookingSeats BookingSeat[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([movieId])
+  @@index([roomId])
+  @@index([startTime])
+}
+
+model Booking {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  status      BookingStatus @default(PENDING)
+  totalAmount Float
+
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  showtimeId String   @db.ObjectId
+  showtime   Showtime @relation(fields: [showtimeId], references: [id])
+
+  bookingSeats BookingSeat[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([showtimeId])
+}
+
+model BookingSeat {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String  @db.ObjectId
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  seatId String @db.ObjectId
+  seat   Seat   @relation(fields: [seatId], references: [id])
+
+  showtimeId String   @db.ObjectId
+  showtime   Showtime @relation(fields: [showtimeId], references: [id])
+
+  price Float
+
+  @@unique([showtimeId, seatId])
+  @@index([bookingId])
+  @@index([seatId])
+}
