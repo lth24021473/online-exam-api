@@ -1,0 +1,21 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: movie_ticket_booking_api
+
+    working_dir: /app
+
+    ports:
+      - '3000:3000'
+
+    volumes:
+      - .:/app
+      - movie_ticket_node_modules:/app/node_modules
+
+    command: npm run start:dev
+
+volumes:
+  movie_ticket_node_modules:
