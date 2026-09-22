@@ -15,8 +15,11 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return application information', () => {
+      expect(appController.getInfo()).toEqual({
+        name: 'online-exam-api',
+        status: 'ok',
+      });
     });
   });
 });

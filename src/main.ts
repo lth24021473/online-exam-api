@@ -14,8 +14,8 @@ async function bootstrap() {
     }),
   );
   const config = new DocumentBuilder()
-    .setTitle('Movie Ticket Booking API')
-    .setDescription('API documentation for Movie Ticket Booking System')
+    .setTitle('Online Exam API')
+    .setDescription('API documentation for the online multiple-choice exam system')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

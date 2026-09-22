@@ -1,131 +1,141 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Online Exam API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend thi trắc nghiệm trực tuyến, sử dụng NestJS, TypeScript, Prisma và MongoDB.
+Tên package và Docker Compose: online-exam-api.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Trạng thái hiện tại
 
-## Description
+Dự án đã chuyển sang **khung nền cho đề tài thi trắc nghiệm**. Có cấu hình NestJS,
+validation toàn cục, Swagger tại /docs, kết nối Prisma, UsersRepository,
+schema đề thi và Docker. Chỉ có GET /api/v1 trả thông tin dịch vụ dạng JSON.
+**Chưa triển khai đăng nhập, phân quyền, API thi/quản lý đề, chấm điểm hoặc kiểm thử tải.**
+Schema mô tả dữ liệu; các quy tắc nghiệp vụ dưới đây cần được triển khai ở Service.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Kiến trúc
 
-## Project setup
+Luồng dự kiến: Controller (REST/JSON, DTO) → Service (nghiệp vụ) → Repository → Prisma → MongoDB.
+Xác thực và phân quyền sẽ dùng NestJS Guard, không lặp trong từng endpoint.
+
+- src/main.ts: khởi động, prefix /api/v1, validation và Swagger.
+- src/app.*: module gốc và thông tin dịch vụ.
+- src/database/: PrismaModule và PrismaService.
+- src/users/: repository người dùng dùng chung.
+- prisma/schema.prisma: mô hình dữ liệu mới.
+- test/: kiểm thử HTTP của khung ứng dụng.
+
+Các module sẽ bổ sung: auth, exams (gồm quản lý câu hỏi), attempts (gồm lưu đáp án và chấm điểm).
+Mỗi module nghiệp vụ cần tách controller, service, repository và DTO.
+
+## Dữ liệu và quy tắc dự kiến
+
+- User: email, mật khẩu băm, họ tên; vai trò STUDENT hoặc EXAM_MANAGER.
+- Exam: tên, mô tả, quy định, thời gian làm bài, người quản lý;
+  trạng thái DRAFT → PUBLISHED → CLOSED.
+- Question: nội dung, danh sách lựa chọn, vị trí và chỉ số đáp án đúng (bắt đầu từ 0).
+- Attempt: người làm, đề thi, thời điểm bắt đầu, hạn nộp, trạng thái, thời điểm nộp và điểm.
+- Answer: một lựa chọn cho mỗi câu trong một lượt làm; cặp attemptId/questionId là duy nhất.
+
+Chỉ được sửa câu hỏi/nội dung hoặc xóa đề ở trạng thái DRAFT. Khi công bố phải có
+ít nhất một câu, mỗi câu có ít nhất hai lựa chọn và một chỉ số đáp án đúng hợp lệ;
+thời gian làm bài phải dương. Nội dung đã công bố được cố định để bảo toàn kết quả.
+Đóng đề chỉ ngăn lượt làm mới, các lượt đang làm tiếp tục tới hạn.
+Chỉ chủ sở hữu được lưu, nộp, xem hoặc hủy lượt làm của mình; người quản lý chỉ
+quản lý và xem kết quả các đề mình sở hữu.
+
+Thời gian do server quyết định. Sau hạn không nhận thay đổi đáp án; khi truy cập
+lượt quá hạn, hệ thống dự kiến chốt bài theo đáp án đã lưu, dùng deadlineAt làm
+thời điểm nộp hiệu lực. Nộp lại không chấm lại hoặc thay đổi kết quả.
+Chỉ hủy lượt IN_PROGRESS chưa quá hạn, đồng thời xóa các Answer liên quan.
+Không trả đáp án đúng trước khi nộp. Điểm dự kiến theo thang 10:
+10 × số câu đúng / tổng số câu; câu chưa trả lời tính là sai.
+Service phải kiểm tra câu hỏi thuộc đề của lượt làm và chỉ số lựa chọn hợp lệ.
+Các thao tác đổi trạng thái/lưu đáp án phải kiểm tra điều kiện ngay khi ghi để
+tránh nhận đáp án sau khi đã nộp hoặc hết hạn.
+
+## API dự kiến (chưa triển khai)
+
+Tất cả đường dẫn dưới đây có prefix /api/v1. Ngoại trừ đăng nhập, tất cả cần
+xác thực qua Guard; đường dẫn /management cần thêm vai trò EXAM_MANAGER.
+
+| Method | Đường dẫn | Chức năng |
+| --- | --- | --- |
+| POST | /auth/login | Đăng nhập |
+| GET | /exams | Danh sách đề đã công bố, số câu và thời gian |
+| GET | /exams/:id | Thông tin và quy định đề |
+| POST | /exams/:id/attempts | Bắt đầu làm bài |
+| GET | /attempts | Lịch sử cá nhân |
+| GET | /attempts/:id | Câu hỏi và đáp án đang chọn |
+| PUT | /attempts/:id/answers/:questionId | Lưu/thay đổi lựa chọn |
+| POST | /attempts/:id/submit | Nộp và chấm bài |
+| GET | /attempts/:id/result | Điểm, đúng/sai và đáp án sau khi nộp |
+| DELETE | /attempts/:id | Hủy lượt chưa nộp |
+| GET | /management/exams | Danh sách đề của người quản lý |
+| GET | /management/exams/:id | Nội dung đề để quản lý |
+| POST | /management/exams | Tạo đề nháp |
+| PATCH | /management/exams/:id | Cập nhật đề nháp |
+| POST | /management/exams/:id/questions | Thêm câu hỏi và lựa chọn |
+| PATCH | /management/exams/:id/questions/:questionId | Sửa câu hỏi và lựa chọn |
+| DELETE | /management/exams/:id/questions/:questionId | Xóa câu hỏi |
+| POST | /management/exams/:id/publish | Công bố |
+| POST | /management/exams/:id/close | Đóng đề |
+| DELETE | /management/exams/:id | Xóa đề nháp |
+| GET | /management/exams/:id/results | Người đã nộp, điểm và thời điểm nộp |
+
+## Chạy local
+
+Yêu cầu Node.js 24 và MongoDB replica set (hoặc MongoDB Atlas).
+
+1. Chạy npm ci.
+2. Sao chép .env.example thành .env nếu chưa có; cấu hình DATABASE_URL trỏ tới
+   database riêng tên online_exam. Không dùng lại database của đề tài trước.
+   JWT_SECRET và JWT_EXPIRES_IN dành cho module xác thực sắp triển khai.
+3. Chạy npm run prisma:generate.
+4. Khi đã xác nhận database mới, chạy npx prisma db push để đồng bộ schema.
+5. Chạy npm run start:dev.
+
+Swagger: http://localhost:3000/docs. API: http://localhost:3000/api/v1.
+PrismaService kết nối database khi khởi động nên cần DATABASE_URL hợp lệ.
+Không có tài khoản mẫu/seed ở thời điểm này.
+
+## Docker
+
+Mở Docker Desktop, tạo `.env` từ `.env.example` nếu chưa có, rồi chạy:
 
 ```bash
-$ npm install
+docker compose up -d --build
+docker compose exec api npx prisma db push
 ```
 
-## Compile and run the project
+Compose chạy MongoDB 8 dưới dạng replica set một nút và dùng volume `mongo_data`
+để lưu dữ liệu. API trong Compose luôn kết nối tới `mongo:27017/online_exam`;
+`DATABASE_URL` trong `.env` chỉ dùng khi chạy ứng dụng trực tiếp trên máy.
+MongoDB nội bộ không mở cổng ra máy chủ và không bật xác thực: cấu hình này chỉ
+dành cho phát triển local. Image tạo Prisma Client và build ứng dụng trước khi chạy.
+Swagger: http://localhost:3000/docs. Kiểm tra trạng thái bằng `docker compose ps`
+và `docker compose logs api`. Dừng bằng `docker compose down` để giữ dữ liệu;
+`docker compose down -v` sẽ xóa volume dữ liệu.
 
-```bash
-# development
-$ npm run start
+Nếu muốn dùng Atlas trong Docker, thay `DATABASE_URL` ở `docker-compose.yml`
+bằng URI Atlas rồi kiểm tra Network Access, cổng 27017 và TLS của Atlas.
 
-# watch mode
-$ npm run start:dev
+## Kiểm tra
 
-# production mode
-$ npm run start:prod
-```
+- npm run prisma:validate
+- npm run build
+- npm test -- --runInBand
+- npm run test:e2e -- --runInBand
+- npm run lint
 
-## Run tests
+E2E hiện chỉ kiểm tra JSON và định tuyến khung ứng dụng, thay kết nối Prisma
+bằng mock; chưa kiểm tra nghiệp vụ hay database thật.
 
-```bash
-# unit tests
-$ npm run test
+## Kế hoạch hoàn thành bài tập
 
-# e2e tests
-$ npm run test:e2e
+Pha 1: triển khai các API trên, Guard xác thực/phân quyền, DTO, kiểm thử nghiệp vụ,
+Swagger cho từng API, dữ liệu mẫu và kịch bản kiểm thử tải Kaggle CPU.
+Giữ repository GitHub công khai và commit theo từng thay đổi có ý nghĩa.
 
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-
-# Movie Ticket Booking API
-
-Backend API for a movie theater ticket booking system.
-
-## Tech Stack
-
-- Node.js
-- NestJS
-- TypeScript
-- MongoDB
-- Prisma ORM
-- JWT / Passport
-- Swagger / OpenAPI
-- Docker
-- Docker Compose
-- k6
+Pha 2: đo baseline trước, xác định vấn đề thực tế rồi mới chọn cải tiến.
+Đánh giá trước/sau trên cùng cấu hình Kaggle CPU, cùng dữ liệu và kịch bản tải;
+lưu cấu hình CPU/RAM, throughput, p50/p95/p99, tỷ lệ lỗi và mức dùng tài nguyên.
+Hiện chưa có kết quả đo hoặc tuyên bố cải thiện hiệu năng.

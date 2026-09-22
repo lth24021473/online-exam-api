@@ -5,3 +5,9 @@ dist
 Dockerfile
 README.md
 npm-debug.log
+
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+coverage
