@@ -8,20 +8,19 @@ datasource db {
 }
 
 enum Role {
-  CUSTOMER
-  ADMIN
+  STUDENT
+  EXAM_MANAGER
 }
 
-enum BookingStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
 }
 
-enum ShowtimeStatus {
-  SCHEDULED
-  CANCELLED
-  FINISHED
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
 }
 
 model User {
@@ -29,129 +28,76 @@ model User {
   email        String   @unique
   passwordHash String
   fullName     String
-  role         Role     @default(CUSTOMER)
+  role         Role     @default(STUDENT)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  bookings Booking[]
+  exams    Exam[]
+  attempts Attempt[]
 }
 
-model Movie {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+model Exam {
+  id              String     @id @default(auto()) @map("_id") @db.ObjectId
   title           String
   description     String?
+  instructions    String?
   durationMinutes Int
-  genre           String?
-  releaseDate     DateTime?
-  posterUrl       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          ExamStatus @default(DRAFT)
+  publishedAt     DateTime?
+  closedAt        DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  managerId       String     @db.ObjectId
+  manager         User       @relation(fields: [managerId], references: [id])
+  questions       Question[]
+  attempts        Attempt[]
 
-  showtimes Showtime[]
+  @@index([managerId])
+  @@index([status])
 }
 
-model Cinema {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  address   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Question {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  examId             String   @db.ObjectId
+  exam               Exam     @relation(fields: [examId], references: [id])
+  content            String
+  options            String[]
+  correctOptionIndex Int
+  position           Int
+  answers            Answer[]
 
-  rooms Room[]
+  @@unique([examId, position])
 }
 
-model Room {
-  id   String @id @default(auto()) @map("_id") @db.ObjectId
-  name String
+model Attempt {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String        @db.ObjectId
+  user           User          @relation(fields: [userId], references: [id])
+  examId         String        @db.ObjectId
+  exam           Exam          @relation(fields: [examId], references: [id])
+  status         AttemptStatus @default(IN_PROGRESS)
+  startedAt      DateTime      @default(now())
+  deadlineAt     DateTime
+  submittedAt    DateTime?
+  score          Float?
+  totalQuestions Int
+  correctCount   Int?
+  incorrectCount Int?
+  answers        Answer[]
 
-  cinemaId String @db.ObjectId
-  cinema   Cinema @relation(fields: [cinemaId], references: [id])
-
-  seats     Seat[]
-  showtimes Showtime[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([cinemaId])
+  @@index([userId, startedAt])
+  @@index([examId, status])
 }
 
-model Seat {
-  id     String @id @default(auto()) @map("_id") @db.ObjectId
-  row    String
-  number Int
+model Answer {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  attemptId           String   @db.ObjectId
+  attempt             Attempt  @relation(fields: [attemptId], references: [id])
+  questionId          String   @db.ObjectId
+  question            Question @relation(fields: [questionId], references: [id])
+  selectedOptionIndex Int
+  updatedAt           DateTime @updatedAt
 
-  roomId String @db.ObjectId
-  room   Room   @relation(fields: [roomId], references: [id])
-
-  bookingSeats BookingSeat[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([roomId, row, number])
-  @@index([roomId])
-}
-
-model Showtime {
-  id        String         @id @default(auto()) @map("_id") @db.ObjectId
-  startTime DateTime
-  endTime   DateTime
-  price     Float
-  status    ShowtimeStatus @default(SCHEDULED)
-
-  movieId String @db.ObjectId
-  movie   Movie  @relation(fields: [movieId], references: [id])
-
-  roomId String @db.ObjectId
-  room   Room   @relation(fields: [roomId], references: [id])
-
-  bookings     Booking[]
-  bookingSeats BookingSeat[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([movieId])
-  @@index([roomId])
-  @@index([startTime])
-}
-
-model Booking {
-  id          String        @id @default(auto()) @map("_id") @db.ObjectId
-  status      BookingStatus @default(PENDING)
-  totalAmount Float
-
-  userId String @db.ObjectId
-  user   User   @relation(fields: [userId], references: [id])
-
-  showtimeId String   @db.ObjectId
-  showtime   Showtime @relation(fields: [showtimeId], references: [id])
-
-  bookingSeats BookingSeat[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([showtimeId])
-}
-
-model BookingSeat {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
-
-  bookingId String  @db.ObjectId
-  booking   Booking @relation(fields: [bookingId], references: [id])
-
-  seatId String @db.ObjectId
-  seat   Seat   @relation(fields: [seatId], references: [id])
-
-  showtimeId String   @db.ObjectId
-  showtime   Showtime @relation(fields: [showtimeId], references: [id])
-
-  price Float
-
-  @@unique([showtimeId, seatId])
-  @@index([bookingId])
-  @@index([seatId])
+  @@unique([attemptId, questionId])
+  @@index([questionId])
 }
