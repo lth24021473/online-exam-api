@@ -5,6 +5,14 @@ import { UsersRepository } from './users.repository';
 export class UsersService {
   constructor(private readonly usersRepository: UsersRepository) {}
 
+  async create(data: {
+    email: string;
+    passwordHash: string;
+    fullName: string;
+  }) {
+    return this.usersRepository.create(data);
+  }
+
   async findByEmail(email: string) {
     return this.usersRepository.findByEmail(email);
   }
@@ -20,7 +28,7 @@ export class UsersService {
       return null;
     }
 
-    const { passwordHash, ...publicUser } = user;
+    const { passwordHash: _passwordHash, ...publicUser } = user;
 
     return publicUser;
   }
