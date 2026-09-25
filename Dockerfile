@@ -2,7 +2,7 @@ FROM node:24-bookworm
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install 
 COPY . .
 RUN DATABASE_URL=mongodb://localhost:27017/online_exam npx prisma generate
 RUN npm run build
