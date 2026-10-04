@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './database/prisma.module';
-import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { ExamsModule } from './exams/exams.module';
+import { QuestionsModule } from './exams/questions/questions.module';
 import { AttemptsModule } from './attempts/attempts.module';
 
 @Module({
@@ -13,6 +15,8 @@ import { AttemptsModule } from './attempts/attempts.module';
     }),
     PrismaModule,
     AuthModule,
+    ExamsModule,
+    QuestionsModule,
     AttemptsModule,
   ],
   controllers: [AppController],
