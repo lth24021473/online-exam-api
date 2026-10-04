@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../database/prisma.module';
-import { AuthSecurityModule } from '../auth/auth-security.module';
-import { ExamsModule } from '../exams/exams.module';
 import { AttemptsController } from './attempts.controller';
-import { AttemptsService } from './attempts.service';
 import { AttemptsRepository } from './attempts.repository';
+import { AttemptsService } from './attempts.service';
 
 @Module({
-  imports: [PrismaModule, AuthSecurityModule, ExamsModule],
+  // AuthModule exports the guards and JWT dependencies through AuthSecurityModule.
+  imports: [PrismaModule, AuthModule],
   controllers: [AttemptsController],
   providers: [AttemptsService, AttemptsRepository],
 })

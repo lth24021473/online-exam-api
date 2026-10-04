@@ -1,78 +1,145 @@
 import {
-  Body, Controller, Get, HttpCode, HttpStatus,
-  Param, Post, Put, Req, UseGuards,
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseEnumPipe,
+  ParseIntPipe,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth, ApiBadRequestResponse, ApiCreatedResponse,
-  ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse,
-  ApiOperation, ApiTags, ApiUnauthorizedResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { AttemptStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { ParseObjectIdPipe } from './parse-object-id.pipe';
 import { AttemptsService } from './attempts.service';
-import { StartAttemptDto } from './dto/start-attempt.dto';
-import { SaveAnswersDto } from './dto/save-answers.dto';
+import { SaveAnswerDto } from './dto/save-answer.dto';
 
 @ApiTags('Attempts')
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: 'Missing, invalid or revoked token' })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.STUDENT)
-@Controller('attempts')
+@Controller()
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
-  @Post()
+  @Post('exams/:examId/attempts')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: '[STUDENT] Start a new exam attempt' })
-  @ApiCreatedResponse({ description: 'Attempt started with deadline calculated from exam duration' })
-  @ApiBadRequestResponse({ description: 'Exam not published or already has an in-progress attempt' })
+  @ApiOperation({
+    summary:
+      'Start an attempt (or resume the running one) for a published exam',
+  })
   @ApiNotFoundResponse({ description: 'Exam not found' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid token' })
-  start(@Req() req: AuthenticatedRequest, @Body() dto: StartAttemptDto) {
-    return this.attemptsService.start(req.user.id, dto);
-  }
-
-  @Get()
-  @ApiOperation({ summary: '[STUDENT] List all my attempts' })
-  @ApiOkResponse({ description: 'List of attempts ordered by start date' })
-  findAll(@Req() req: AuthenticatedRequest) {
-    return this.attemptsService.findAll(req.user.id);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: '[STUDENT] Get attempt detail with answers' })
-  @ApiOkResponse({ description: 'Attempt detail including answers saved so far' })
-  @ApiNotFoundResponse({ description: 'Attempt not found' })
-  @ApiForbiddenResponse({ description: 'Not your attempt' })
-  findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.attemptsService.findOne(id, req.user.id);
-  }
-
-  @Put(':id/answers')
-  @ApiOperation({ summary: '[STUDENT] Save or update answers (can call multiple times before submit)' })
-  @ApiOkResponse({ description: 'Answers saved' })
-  @ApiBadRequestResponse({ description: 'Attempt already submitted or deadline passed' })
-  @ApiNotFoundResponse({ description: 'Attempt not found' })
-  @ApiForbiddenResponse({ description: 'Not your attempt' })
-  saveAnswers(
-    @Param('id') id: string,
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: SaveAnswersDto,
+  @ApiConflictResponse({ description: 'Exam is closed or has no questions' })
+  start(
+    @Req() request: AuthenticatedRequest,
+    @Param('examId', ParseObjectIdPipe) examId: string,
   ) {
-    return this.attemptsService.saveAnswers(id, req.user.id, dto);
+    return this.attemptsService.start(request.user.id, examId);
   }
 
-  @Post(':id/submit')
+  // NOTE: must stay above any `attempts/:attemptId` GET route.
+  @Get('attempts')
+  @ApiOperation({ summary: 'Attempt history of the current student' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'examId', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: AttemptStatus })
+  @ApiOkResponse({ description: 'Paginated attempts, newest first' })
+  history(
+    @Req() request: AuthenticatedRequest,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('examId', new ParseObjectIdPipe({ optional: true }))
+    examId?: string,
+    @Query('status', new ParseEnumPipe(AttemptStatus, { optional: true }))
+    status?: AttemptStatus,
+  ) {
+    return this.attemptsService.getHistory(request.user.id, {
+      page,
+      limit,
+      examId,
+      status,
+    });
+  }
+
+  @Put('attempts/:attemptId/answers/:questionId')
+  @ApiOperation({ summary: 'Select / change the answer of one question' })
+  @ApiNotFoundResponse({ description: 'Attempt or question not found' })
+  @ApiConflictResponse({ description: 'Attempt submitted or time is over' })
+  saveAnswer(
+    @Req() request: AuthenticatedRequest,
+    @Param('attemptId', ParseObjectIdPipe) attemptId: string,
+    @Param('questionId', ParseObjectIdPipe) questionId: string,
+    @Body() dto: SaveAnswerDto,
+  ) {
+    return this.attemptsService.saveAnswer(
+      request.user.id,
+      attemptId,
+      questionId,
+      dto.selectedOptionIndex,
+    );
+  }
+
+  @Post('attempts/:attemptId/submit')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '[STUDENT] Submit attempt and get score' })
-  @ApiOkResponse({ description: 'Attempt submitted with score, correctCount, incorrectCount' })
-  @ApiBadRequestResponse({ description: 'Attempt already submitted' })
+  @ApiOperation({ summary: 'Submit the attempt and get the graded result' })
   @ApiNotFoundResponse({ description: 'Attempt not found' })
-  @ApiForbiddenResponse({ description: 'Not your attempt' })
-  submit(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.attemptsService.submit(id, req.user.id);
+  submit(
+    @Req() request: AuthenticatedRequest,
+    @Param('attemptId', ParseObjectIdPipe) attemptId: string,
+  ) {
+    return this.attemptsService.submit(request.user.id, attemptId);
+  }
+
+  @Delete('attempts/:attemptId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Cancel an attempt that has not been submitted' })
+  @ApiNoContentResponse({
+    description: 'Attempt marked CANCELLED; answers retained',
+  })
+  @ApiNotFoundResponse({ description: 'Attempt not found' })
+  @ApiConflictResponse({
+    description: 'Attempt already submitted or cancelled',
+  })
+  async cancel(
+    @Req() request: AuthenticatedRequest,
+    @Param('attemptId', ParseObjectIdPipe) attemptId: string,
+  ) {
+    await this.attemptsService.cancel(request.user.id, attemptId);
+  }
+
+  @Get('attempts/:attemptId/result')
+  @ApiOperation({
+    summary: 'Score and per-question review of a submitted attempt',
+  })
+  @ApiNotFoundResponse({ description: 'Attempt not found' })
+  @ApiConflictResponse({ description: 'Attempt has not been submitted yet' })
+  result(
+    @Req() request: AuthenticatedRequest,
+    @Param('attemptId', ParseObjectIdPipe) attemptId: string,
+  ) {
+    return this.attemptsService.getResult(request.user.id, attemptId);
   }
 }

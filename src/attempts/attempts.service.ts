@@ -1,95 +1,294 @@
 import {
-  BadRequestException, ForbiddenException, Injectable, NotFoundException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
 } from '@nestjs/common';
-import { ExamStatus } from '@prisma/client';
-import { ExamsRepository } from '../exams/exams.repository';
+import { Attempt, AttemptStatus, ExamStatus, Prisma } from '@prisma/client';
 import { AttemptsRepository } from './attempts.repository';
-import { StartAttemptDto } from './dto/start-attempt.dto';
-import { SaveAnswersDto } from './dto/save-answers.dto';
+
+export const MAX_SCORE = 10;
+
+type ExamInfo = {
+  id: string;
+  title: string;
+  instructions: string | null;
+  durationMinutes: number;
+};
+
+type OwnedAttempt = NonNullable<
+  Awaited<ReturnType<AttemptsRepository['findById']>>
+>;
 
 @Injectable()
 export class AttemptsService {
-  constructor(
-    private readonly attemptsRepository: AttemptsRepository,
-    private readonly examsRepository: ExamsRepository,
-  ) {}
+  constructor(private readonly repo: AttemptsRepository) {}
 
-  async start(userId: string, dto: StartAttemptDto) {
-    const exam = await this.examsRepository.findById(dto.examId);
-    if (!exam) throw new NotFoundException('Exam not found');
-    if (exam.status !== ExamStatus.PUBLISHED)
-      throw new BadRequestException('Exam is not published');
+  async start(userId: string, examId: string) {
+    const exam = await this.repo.findExamForStart(examId);
+    if (!exam || exam.status === ExamStatus.DRAFT) {
+      throw new NotFoundException('Exam not found');
+    }
+    if (exam.status !== ExamStatus.PUBLISHED) {
+      throw new ConflictException('Exam is closed');
+    }
 
-    const existing = await this.attemptsRepository.findActiveByUserAndExam(userId, dto.examId);
-    if (existing) throw new BadRequestException('You already have an in-progress attempt for this exam');
+    const existing = await this.repo.findInProgress(userId, examId);
+    if (existing) {
+      if (existing.deadlineAt.getTime() > Date.now()) {
+        // Resume the running attempt instead of creating a duplicate.
+        return { resumed: true, ...(await this.buildSession(existing, exam)) };
+      }
+      await this.finalize(existing);
+    }
 
-    const deadlineAt = new Date(Date.now() + exam.durationMinutes * 60 * 1000);
+    const totalQuestions = exam._count.questions;
+    if (totalQuestions === 0) {
+      throw new ConflictException('Exam has no questions');
+    }
 
-    return this.attemptsRepository.create({
-      user: { connect: { id: userId } },
-      exam: { connect: { id: dto.examId } },
-      deadlineAt,
-      totalQuestions: exam.questions.length,
+    const attempt = await this.repo.create({
+      userId,
+      examId,
+      totalQuestions,
+      deadlineAt: new Date(Date.now() + exam.durationMinutes * 60_000),
     });
+    return { resumed: false, ...(await this.buildSession(attempt, exam)) };
   }
 
-  async findAll(userId: string) {
-    return this.attemptsRepository.findByUser(userId);
+  async saveAnswer(
+    userId: string,
+    attemptId: string,
+    questionId: string,
+    selectedOptionIndex: number,
+  ) {
+    const attempt = await this.getOwnedAttempt(userId, attemptId);
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new ConflictException('Attempt is no longer in progress');
+    }
+    if (attempt.deadlineAt.getTime() <= Date.now()) {
+      throw new ConflictException('Time is over for this attempt');
+    }
+
+    const question = await this.repo.findQuestionInExam(
+      attempt.examId,
+      questionId,
+    );
+    if (!question) throw new NotFoundException('Question not found in exam');
+    const option = question.options.find(
+      (o) => o.position === selectedOptionIndex,
+    );
+    if (
+      !Number.isInteger(selectedOptionIndex) ||
+      selectedOptionIndex < 0 ||
+      !option
+    ) {
+      throw new ConflictException('Selected option does not exist');
+    }
+
+    const answer = await this.repo.upsertAnswer(
+      attemptId,
+      userId,
+      questionId,
+      option.id,
+    );
+    return {
+      questionId: answer.questionId,
+      selectedOptionIndex: answer.selectedOption.position,
+      savedAt: answer.updatedAt,
+    };
   }
 
-  async findOne(id: string, userId: string) {
-    const attempt = await this.attemptsRepository.findByIdWithDetails(id);
-    if (!attempt) throw new NotFoundException('Attempt not found');
-    if (attempt.userId !== userId)
-      throw new ForbiddenException('You do not own this attempt');
+  async submit(userId: string, attemptId: string) {
+    const attempt = await this.getOwnedAttempt(userId, attemptId);
+    if (attempt.status === AttemptStatus.CANCELLED) {
+      throw new ConflictException('Cancelled attempts cannot be submitted');
+    }
+    // Idempotent: submitting twice just returns the existing result.
+    if (attempt.status === AttemptStatus.SUBMITTED) {
+      return this.buildResult(attempt);
+    }
+    const submitted = await this.finalize(attempt);
+    return this.buildResult(submitted);
+  }
+
+  async cancel(userId: string, attemptId: string) {
+    const attempt = await this.getOwnedAttempt(userId, attemptId);
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new ConflictException('Only in-progress attempts can be cancelled');
+    }
+    const cancelled = await this.repo.cancelInProgress(attemptId, userId);
+    if (cancelled === 0) {
+      throw new ConflictException('Attempt was already submitted or cancelled');
+    }
+  }
+
+  async getResult(userId: string, attemptId: string) {
+    let attempt = await this.getOwnedAttempt(userId, attemptId);
+    if (attempt.status === AttemptStatus.CANCELLED) {
+      throw new ConflictException('Cancelled attempts have no graded result');
+    }
+    if (attempt.status === AttemptStatus.IN_PROGRESS) {
+      if (attempt.deadlineAt.getTime() > Date.now()) {
+        throw new ConflictException('Attempt has not been submitted yet');
+      }
+      attempt = await this.finalize(attempt);
+    }
+    return this.buildResult(attempt);
+  }
+
+  async getHistory(
+    userId: string,
+    query: {
+      page: number;
+      limit: number;
+      examId?: string;
+      status?: AttemptStatus;
+    },
+  ) {
+    const page = Math.max(1, query.page);
+    const limit = Math.min(Math.max(1, query.limit), 50);
+    const where: Prisma.AttemptWhereInput = {
+      userId,
+      ...(query.examId && { examId: query.examId }),
+      ...(query.status && { status: query.status }),
+    };
+
+    const { items, total } = await this.repo.history(
+      where,
+      (page - 1) * limit,
+      limit,
+    );
+    const now = Date.now();
+    return {
+      items: items.map((a) => ({
+        ...a,
+        maxScore: MAX_SCORE,
+        expired:
+          a.status === AttemptStatus.IN_PROGRESS &&
+          a.deadlineAt.getTime() <= now,
+      })),
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  private async getOwnedAttempt(userId: string, attemptId: string) {
+    const attempt = await this.repo.findById(attemptId);
+    if (!attempt || attempt.userId !== userId) {
+      throw new NotFoundException('Attempt not found');
+    }
     return attempt;
   }
 
-  async saveAnswers(id: string, userId: string, dto: SaveAnswersDto) {
-    const attempt = await this.attemptsRepository.findByIdWithDetails(id);
-    if (!attempt) throw new NotFoundException('Attempt not found');
-    if (attempt.userId !== userId)
-      throw new ForbiddenException('You do not own this attempt');
-    if (attempt.status !== 'IN_PROGRESS')
-      throw new BadRequestException('Attempt is already submitted');
-    if (new Date() > attempt.deadlineAt)
-      throw new BadRequestException('Attempt deadline has passed, please submit');
-
-    await Promise.all(
-      dto.answers.map((a) =>
-        this.attemptsRepository.upsertAnswer(id, a.questionId, a.selectedOptionIndex),
-      ),
-    );
-
-    return { message: 'Answers saved', count: dto.answers.length };
+  private async buildSession(attempt: Attempt, exam: ExamInfo) {
+    const [questions, answers] = await Promise.all([
+      this.repo.listQuestions(attempt.examId),
+      this.repo.listAnswers(attempt.id),
+    ]);
+    return {
+      attempt: {
+        id: attempt.id,
+        examId: attempt.examId,
+        status: attempt.status,
+        startedAt: attempt.startedAt,
+        deadlineAt: attempt.deadlineAt,
+        totalQuestions: attempt.totalQuestions,
+      },
+      exam: {
+        id: exam.id,
+        title: exam.title,
+        instructions: exam.instructions,
+        durationMinutes: exam.durationMinutes,
+      },
+      questions: questions.map((q) => ({
+        id: q.id,
+        content: q.content,
+        position: q.position,
+        options: q.options.map((o) => o.content),
+      })),
+      answers: answers.map(({ questionId, selectedOption }) => ({
+        questionId,
+        selectedOptionIndex: selectedOption.position,
+      })),
+    };
   }
 
-  async submit(id: string, userId: string) {
-    const attempt = await this.attemptsRepository.findByIdWithDetails(id);
-    if (!attempt) throw new NotFoundException('Attempt not found');
-    if (attempt.userId !== userId)
-      throw new ForbiddenException('You do not own this attempt');
-    if (attempt.status !== 'IN_PROGRESS')
-      throw new BadRequestException('Attempt is already submitted');
+  private async finalize(attempt: Attempt) {
+    return this.repo.submitInProgress(
+      attempt.id,
+      attempt.userId,
+      (questions, answers, current) => {
+        const key = new Map(
+          questions.map((q) => {
+            const correctOptions = q.options.filter((o) => o.isCorrect);
+            if (correctOptions.length !== 1) {
+              throw new ConflictException(
+                'Each question must have one correct option',
+              );
+            }
+            return [q.id, correctOptions[0].id];
+          }),
+        );
+        const correctCount = answers.filter(
+          (a) => key.get(a.questionId) === a.selectedOptionId,
+        ).length;
+        const total = current.totalQuestions;
+        const now = new Date();
+        return {
+          submittedAt: now > current.deadlineAt ? current.deadlineAt : now,
+          correctCount,
+          incorrectCount: total - correctCount,
+          score: total
+            ? Math.round((correctCount / total) * MAX_SCORE * 100) / 100
+            : 0,
+        };
+      },
+    );
+  }
 
-    // Fetch questions to grade
-    const exam = await this.examsRepository.findById(attempt.examId);
-    if (!exam) throw new NotFoundException('Exam not found');
+  private async buildResult(attempt: OwnedAttempt) {
+    const [questions, answers] = await Promise.all([
+      this.repo.listQuestionsWithKey(attempt.examId),
+      this.repo.listAnswers(attempt.id),
+    ]);
+    const selected = new Map(
+      answers.map((a) => [a.questionId, a.selectedOptionId]),
+    );
 
-    const questionMap = new Map(exam.questions.map((q) => [q.id, q.correctOptionIndex]));
-
-    let correct = 0;
-    let incorrect = 0;
-    for (const answer of attempt.answers) {
-      const correctIndex = questionMap.get(answer.questionId);
-      if (correctIndex === undefined) continue;
-      if (answer.selectedOptionIndex === correctIndex) correct++;
-      else incorrect++;
-    }
-
-    const total = exam.questions.length;
-    const score = total > 0 ? (correct / total) * 100 : 0;
-
-    return this.attemptsRepository.submit(id, Math.round(score * 100) / 100, correct, incorrect);
+    return {
+      attempt: {
+        id: attempt.id,
+        examId: attempt.examId,
+        examTitle: attempt.exam.title,
+        status: attempt.status,
+        startedAt: attempt.startedAt,
+        deadlineAt: attempt.deadlineAt,
+        submittedAt: attempt.submittedAt,
+      },
+      summary: {
+        score: attempt.score,
+        maxScore: MAX_SCORE,
+        totalQuestions: attempt.totalQuestions,
+        correctCount: attempt.correctCount,
+        incorrectCount: attempt.incorrectCount,
+        unansweredCount: attempt.totalQuestions - answers.length,
+      },
+      questions: questions.map((q) => {
+        const selectedOptionId = selected.get(q.id);
+        const selectedOptionIndex =
+          q.options.find((o) => o.id === selectedOptionId)?.position ?? null;
+        const correctOption = q.options.find((o) => o.isCorrect);
+        return {
+          id: q.id,
+          position: q.position,
+          content: q.content,
+          options: q.options.map((o) => o.content),
+          selectedOptionIndex,
+          correctOptionIndex: correctOption?.position ?? null,
+          isCorrect: Boolean(
+            correctOption && selectedOptionId === correctOption.id,
+          ),
+        };
+      }),
+    };
   }
 }
