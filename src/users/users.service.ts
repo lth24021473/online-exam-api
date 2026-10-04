@@ -28,7 +28,11 @@ export class UsersService {
       return null;
     }
 
-    const { passwordHash: _passwordHash, ...publicUser } = user;
+    const {
+      passwordHash: _passwordHash,
+      authVersion: _authVersion,
+      ...publicUser
+    } = user;
 
     return publicUser;
   }

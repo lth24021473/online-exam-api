@@ -25,6 +25,13 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 @Controller('protected-test')
 class ProtectedTestController {
+  @Get('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  admin() {
+    return { ok: true };
+  }
+
   @Get('manager')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.EXAM_MANAGER)
@@ -59,6 +66,7 @@ describe('Authentication HTTP flow', () => {
     findById: jest.fn(),
     create: jest.fn(),
   };
+  const prismaUser = { findUnique: jest.fn() };
   const registration = {
     email: ' Student@Example.com ',
     fullName: ' Nguyen Van An ',
@@ -80,7 +88,10 @@ describe('Authentication HTTP flow', () => {
         JwtAuthGuard,
         RolesGuard,
         TokenRevocationService,
-        { provide: PrismaService, useValue: { revokedToken } },
+        {
+          provide: PrismaService,
+          useValue: { revokedToken, user: prismaUser },
+        },
         { provide: UsersRepository, useValue: repository },
       ],
     }).compile();
@@ -110,11 +121,19 @@ describe('Authentication HTTP flow', () => {
     repository.findById.mockImplementation(async (id) =>
       savedUser?.id === id ? savedUser : null,
     );
+    prismaUser.findUnique.mockImplementation(async ({ where }) =>
+      savedUser?.id === where.id ? savedUser : null,
+    );
     repository.findByEmail.mockImplementation(async (email) =>
       savedUser?.email === email ? savedUser : null,
     );
     repository.create.mockImplementation(async (data) => {
-      savedUser = { id: '507f1f77bcf86cd799439011', role: 'STUDENT', ...data };
+      savedUser = {
+        id: '507f1f77bcf86cd799439011',
+        role: 'STUDENT',
+        authVersion: 0,
+        ...data,
+      };
       return savedUser;
     });
   });
@@ -165,7 +184,7 @@ describe('Authentication HTTP flow', () => {
       'invalid',
       jwt.sign(claims, { expiresIn: -1 }),
       jwt.sign(claims, { secret: 'wrong-secret' }),
-      jwt.sign({ ...claims, role: 'ADMIN' }),
+      jwt.sign({ ...claims, role: 'UNKNOWN_ROLE' }),
       jwt.sign({ ...claims, sub: 'invalid-id' }),
       new JwtService({ secret: 'registration-test-secret' }).sign(claims),
     ];
@@ -182,19 +201,24 @@ describe('Authentication HTTP flow', () => {
     expect(repository.findById).not.toHaveBeenCalled();
   });
 
-  it.each([Role.STUDENT, Role.EXAM_MANAGER])(
+  it.each([Role.STUDENT, Role.EXAM_MANAGER, Role.ADMIN])(
     'enforces role boundaries for %s',
     async (role) => {
-      const token = app
-        .get(JwtService)
-        .sign({
-          sub: '507f1f77bcf86cd799439011',
-          email: 'user@example.com',
-          role,
-        });
+      savedUser = {
+        id: '507f1f77bcf86cd799439011',
+        email: 'user@example.com',
+        role,
+        authVersion: 0,
+      };
+      const token = app.get(JwtService).sign({
+        sub: '507f1f77bcf86cd799439011',
+        email: 'user@example.com',
+        role,
+      });
       for (const [route, required] of [
         ['student', Role.STUDENT],
         ['manager', Role.EXAM_MANAGER],
+        ['admin', Role.ADMIN],
       ]) {
         await request(app.getHttpServer())
           .get(`/api/v1/protected-test/${route}`)

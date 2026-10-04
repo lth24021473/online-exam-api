@@ -76,12 +76,17 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      authVersion: user.authVersion ?? 0,
       jti: randomUUID(),
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
 
-    const { passwordHash: _passwordHash, ...safeUser } = user;
+    const {
+      passwordHash: _passwordHash,
+      authVersion: _authVersion,
+      ...safeUser
+    } = user;
 
     return {
       accessToken,

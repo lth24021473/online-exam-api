@@ -29,6 +29,12 @@ import { TokenRevocationService } from './token-revocation.service';
 
   providers: [JwtAuthGuard, RolesGuard, TokenRevocationService],
 
-  exports: [JwtAuthGuard, RolesGuard, JwtModule, TokenRevocationService],
+  exports: [
+    JwtAuthGuard,
+    RolesGuard,
+    JwtModule,
+    TokenRevocationService,
+    PrismaModule,
+  ],
 })
 export class AuthSecurityModule {}
