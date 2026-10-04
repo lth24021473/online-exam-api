@@ -6,7 +6,6 @@ import {
 import { Attempt, AttemptStatus, ExamStatus, Prisma } from '@prisma/client';
 import { AttemptsRepository } from './attempts.repository';
 
-/** Scores are on a 10-point scale, rounded to 2 decimals. */
 export const MAX_SCORE = 10;
 
 type ExamInfo = {
@@ -18,9 +17,8 @@ type ExamInfo = {
 
 @Injectable()
 export class AttemptsService {
-  constructor(private readonly repo: AttemptsRepository) {}
+  constructor(private readonly repo: AttemptsRepository) { }
 
-  // ---------------------------------------------------------------- Start
   async start(userId: string, examId: string) {
     const exam = await this.repo.findExamForStart(examId);
     if (!exam || exam.status === ExamStatus.DRAFT) {
@@ -36,7 +34,6 @@ export class AttemptsService {
         // Resume the running attempt instead of creating a duplicate.
         return { resumed: true, ...(await this.buildSession(existing, exam)) };
       }
-      // The old attempt ran out of time: grade it, then allow a fresh one.
       await this.finalize(existing);
     }
 
@@ -54,7 +51,6 @@ export class AttemptsService {
     return { resumed: false, ...(await this.buildSession(attempt, exam)) };
   }
 
-  // ---------------------------------------------------------- Save answer
   async saveAnswer(
     userId: string,
     attemptId: string,
@@ -90,7 +86,6 @@ export class AttemptsService {
     };
   }
 
-  // --------------------------------------------------------------- Submit
   async submit(userId: string, attemptId: string) {
     const attempt = await this.getOwnedAttempt(userId, attemptId);
     // Idempotent: submitting twice just returns the existing result.
@@ -101,7 +96,6 @@ export class AttemptsService {
     return this.buildResult(submitted);
   }
 
-  // --------------------------------------------------------------- Cancel
   async cancel(userId: string, attemptId: string) {
     const attempt = await this.getOwnedAttempt(userId, attemptId);
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
@@ -115,19 +109,17 @@ export class AttemptsService {
     await this.repo.deleteAnswers(attemptId);
   }
 
-  // ----------------------------------------------------------- Get result
   async getResult(userId: string, attemptId: string) {
     let attempt = await this.getOwnedAttempt(userId, attemptId);
     if (attempt.status === AttemptStatus.IN_PROGRESS) {
       if (attempt.deadlineAt.getTime() > Date.now()) {
         throw new ConflictException('Attempt has not been submitted yet');
       }
-      attempt = await this.finalize(attempt); // time ran out -> auto-grade
+      attempt = await this.finalize(attempt);
     }
     return this.buildResult(attempt);
   }
 
-  // ---------------------------------------------------------- Get history
   async getHistory(
     userId: string,
     query: {
@@ -155,7 +147,6 @@ export class AttemptsService {
       items: items.map((a) => ({
         ...a,
         maxScore: MAX_SCORE,
-        // Running attempts whose time is over are graded the next time they are opened.
         expired:
           a.status === AttemptStatus.IN_PROGRESS &&
           a.deadlineAt.getTime() <= now,
@@ -164,8 +155,6 @@ export class AttemptsService {
     };
   }
 
-  // -------------------------------------------------------------- Helpers
-  /** Returns 404 for both "missing" and "belongs to someone else" to avoid leaking ids. */
   private async getOwnedAttempt(userId: string, attemptId: string) {
     const attempt = await this.repo.findById(attemptId);
     if (!attempt || attempt.userId !== userId) {
@@ -202,7 +191,6 @@ export class AttemptsService {
     };
   }
 
-  /** Grades the attempt and moves it IN_PROGRESS -> SUBMITTED exactly once. */
   private async finalize(attempt: Attempt) {
     const [questions, answers] = await Promise.all([
       this.repo.listQuestionsWithKey(attempt.examId),
@@ -216,13 +204,11 @@ export class AttemptsService {
     const now = new Date();
 
     await this.repo.finalize(attempt.id, {
-      // If the deadline already passed, record the deadline as the submit time.
       submittedAt: now > attempt.deadlineAt ? attempt.deadlineAt : now,
       correctCount,
-      incorrectCount: total - correctCount, // wrong answers + unanswered
+      incorrectCount: total - correctCount,
       score: total ? Math.round((correctCount / total) * MAX_SCORE * 100) / 100 : 0,
     });
-    // If a concurrent request won the race, we simply read what it saved.
     const fresh = await this.repo.findById(attempt.id);
     return fresh as Attempt;
   }
@@ -252,7 +238,7 @@ export class AttemptsService {
         maxScore: MAX_SCORE,
         totalQuestions: attempt.totalQuestions,
         correctCount: attempt.correctCount,
-        incorrectCount: attempt.incorrectCount, // includes unanswered
+        incorrectCount: attempt.incorrectCount,
         unansweredCount: attempt.totalQuestions - answers.length,
       },
       questions: questions.map((q) => {
