@@ -1,11 +1,25 @@
 import {
-  Controller, Delete, Get, HttpCode, HttpStatus,
-  NotFoundException, Param, Patch, Body, UseGuards,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Patch,
+  Body,
+  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth, ApiNoContentResponse, ApiNotFoundResponse,
-  ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse,
+  ApiBearerAuth,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
   ApiForbiddenResponse,
+  ApiConflictResponse,
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -38,7 +52,11 @@ export class AdminUsersController {
   async findOne(@Param('id') id: string) {
     const user = await this.usersRepository.findById(id);
     if (!user) throw new NotFoundException('User not found');
-    const { passwordHash: _ph, ...publicUser } = user;
+    const {
+      passwordHash: _ph,
+      authVersion: _authVersion,
+      ...publicUser
+    } = user;
     return publicUser;
   }
 
@@ -56,6 +74,7 @@ export class AdminUsersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '[ADMIN] Delete a user account' })
   @ApiNoContentResponse({ description: 'User deleted' })
+  @ApiConflictResponse({ description: 'User still owns exams or attempts' })
   @ApiNotFoundResponse({ description: 'User not found' })
   async remove(@Param('id') id: string) {
     const user = await this.usersRepository.findById(id);

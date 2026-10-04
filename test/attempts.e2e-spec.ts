@@ -325,7 +325,32 @@ describe('Attempts HTTP API (e2e, in-memory persistence)', () => {
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
-      .useValue({ revokedToken: { findUnique: revokedTokenLookup } })
+      .useValue({
+        revokedToken: { findUnique: revokedTokenLookup },
+        user: {
+          findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+            const users = [
+              {
+                id: STUDENT_ID,
+                email: 'student@example.test',
+                role: Role.STUDENT,
+              },
+              {
+                id: OTHER_STUDENT_ID,
+                email: 'other@example.test',
+                role: Role.STUDENT,
+              },
+              {
+                id: MANAGER_ID,
+                email: 'manager@example.test',
+                role: Role.EXAM_MANAGER,
+              },
+            ];
+            const user = users.find(({ id }) => id === where.id);
+            return user ? { ...user, authVersion: 0 } : null;
+          }),
+        },
+      })
       .overrideProvider(AttemptsRepository)
       .useValue(repo)
       .compile();
