@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   STUDENT
   EXAM_MANAGER
+  ADMIN
 }
 
 enum ExamStatus {

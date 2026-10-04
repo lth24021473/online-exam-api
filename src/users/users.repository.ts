@@ -30,4 +30,23 @@ export class UsersRepository {
       data,
     });
   }
+
+  async findAll() {
+    return this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, email: true, fullName: true, role: true, createdAt: true, updatedAt: true },
+    });
+  }
+
+  async updateRole(id: string, role: import('@prisma/client').Role) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { role },
+      select: { id: true, email: true, fullName: true, role: true, updatedAt: true },
+    });
+  }
+
+  async deleteById(id: string) {
+    return this.prisma.user.delete({ where: { id } });
+  }
 }

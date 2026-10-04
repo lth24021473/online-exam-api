@@ -1,0 +1,14 @@
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '../database/prisma.module';
+import { AuthSecurityModule } from '../auth/auth-security.module';
+import { ExamsController } from './exams.controller';
+import { ExamsService } from './exams.service';
+import { ExamsRepository } from './exams.repository';
+
+@Module({
+  imports: [PrismaModule, AuthSecurityModule],
+  controllers: [ExamsController],
+  providers: [ExamsService, ExamsRepository],
+  exports: [ExamsService, ExamsRepository],
+})
+export class ExamsModule {}
