@@ -21,6 +21,7 @@ enum ExamStatus {
 enum AttemptStatus {
   IN_PROGRESS
   SUBMITTED
+  CANCELLED
 }
 
 model RevokedToken {
@@ -64,16 +65,27 @@ model Exam {
 }
 
 model Question {
-  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
-  examId             String   @db.ObjectId
-  exam               Exam     @relation(fields: [examId], references: [id])
-  content            String
-  options            String[]
-  correctOptionIndex Int
-  position           Int
-  answers            Answer[]
+  id       String          @id @default(auto()) @map("_id") @db.ObjectId
+  examId   String          @db.ObjectId
+  exam     Exam            @relation(fields: [examId], references: [id])
+  content  String
+  options  Option[]
+  position Int
+  answers  AttemptAnswer[]
 
   @@unique([examId, position])
+}
+
+model Option {
+  id         String          @id @default(auto()) @map("_id") @db.ObjectId
+  questionId String          @db.ObjectId
+  question   Question        @relation(fields: [questionId], references: [id])
+  content    String
+  position   Int
+  isCorrect  Boolean         @default(false)
+  answers    AttemptAnswer[]
+
+  @@unique([questionId, position])
 }
 
 model Attempt {
@@ -86,25 +98,30 @@ model Attempt {
   startedAt      DateTime      @default(now())
   deadlineAt     DateTime
   submittedAt    DateTime?
+  cancelledAt    DateTime?
+  answerVersion  Int           @default(0)
   score          Float?
   totalQuestions Int
   correctCount   Int?
   incorrectCount Int?
-  answers        Answer[]
+  answers        AttemptAnswer[]
 
   @@index([userId, startedAt])
   @@index([examId, status])
 }
 
-model Answer {
-  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
-  attemptId           String   @db.ObjectId
-  attempt             Attempt  @relation(fields: [attemptId], references: [id])
-  questionId          String   @db.ObjectId
-  question            Question @relation(fields: [questionId], references: [id])
-  selectedOptionIndex Int
-  updatedAt           DateTime @updatedAt
+model AttemptAnswer {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  attemptId        String   @db.ObjectId
+  attempt          Attempt  @relation(fields: [attemptId], references: [id])
+  questionId       String   @db.ObjectId
+  question         Question @relation(fields: [questionId], references: [id])
+  selectedOptionId String   @db.ObjectId
+  selectedOption   Option   @relation(fields: [selectedOptionId], references: [id])
+  updatedAt        DateTime @updatedAt
 
   @@unique([attemptId, questionId])
   @@index([questionId])
+  @@index([selectedOptionId])
+  @@map("Answer")
 }

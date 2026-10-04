@@ -1,6 +1,52 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AttemptStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+
+const examInfo = { select: { id: true, title: true } } as const;
+
+const gradingQuestionSelect = {
+  id: true,
+  content: true,
+  position: true,
+  options: {
+    orderBy: { position: 'asc' },
+    select: { id: true, content: true, position: true, isCorrect: true },
+  },
+} as const;
+
+const gradingAnswerSelect = {
+  questionId: true,
+  selectedOptionId: true,
+  updatedAt: true,
+  selectedOption: { select: { position: true } },
+} as const;
+
+export type GradingQuestion = Prisma.QuestionGetPayload<{
+  select: typeof gradingQuestionSelect;
+}>;
+
+export type GradingAnswer = Prisma.AttemptAnswerGetPayload<{
+  select: typeof gradingAnswerSelect;
+}>;
+
+export type AttemptWithExam = Prisma.AttemptGetPayload<{
+  include: { exam: typeof examInfo };
+}>;
+
+type GradeAttempt = (
+  questions: GradingQuestion[],
+  answers: GradingAnswer[],
+  attempt: AttemptWithExam,
+) => {
+  submittedAt: Date;
+  score: number;
+  correctCount: number;
+  incorrectCount: number;
+};
 
 @Injectable()
 export class AttemptsRepository {
@@ -39,7 +85,7 @@ export class AttemptsRepository {
   findById(id: string) {
     return this.prisma.attempt.findUnique({
       where: { id },
-      include: { exam: { select: { id: true, title: true } } },
+      include: { exam: examInfo },
     });
   }
 
@@ -48,82 +94,133 @@ export class AttemptsRepository {
     return this.prisma.question.findMany({
       where: { examId },
       orderBy: { position: 'asc' },
-      select: { id: true, content: true, options: true, position: true },
+      select: {
+        id: true,
+        content: true,
+        position: true,
+        options: {
+          orderBy: { position: 'asc' },
+          select: { id: true, content: true, position: true },
+        },
+      },
     });
   }
 
-  /** Questions including correctOptionIndex (grading / result review only). */
+  /** Questions including the answer key (grading / result review only). */
   listQuestionsWithKey(examId: string) {
     return this.prisma.question.findMany({
       where: { examId },
       orderBy: { position: 'asc' },
+      select: gradingQuestionSelect,
     });
   }
 
   findQuestionInExam(examId: string, questionId: string) {
     return this.prisma.question.findFirst({
       where: { id: questionId, examId },
-      select: { id: true, options: true },
+      select: {
+        id: true,
+        options: {
+          orderBy: { position: 'asc' },
+          select: { id: true, position: true },
+        },
+      },
     });
   }
 
   listAnswers(attemptId: string) {
-    return this.prisma.answer.findMany({
+    return this.prisma.attemptAnswer.findMany({
       where: { attemptId },
-      select: {
-        questionId: true,
-        selectedOptionIndex: true,
-        updatedAt: true,
-      },
+      select: gradingAnswerSelect,
     });
   }
 
   upsertAnswer(
     attemptId: string,
+    userId: string,
     questionId: string,
-    selectedOptionIndex: number,
+    selectedOptionId: string,
   ) {
-    return this.prisma.answer.upsert({
-      where: { attemptId_questionId: { attemptId, questionId } },
-      create: { attemptId, questionId, selectedOptionIndex },
-      update: { selectedOptionIndex },
-    });
+    return this.withWriteConflictRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.attempt.updateMany({
+          where: {
+            id: attemptId,
+            userId,
+            status: AttemptStatus.IN_PROGRESS,
+            deadlineAt: { gt: new Date() },
+          },
+          data: { answerVersion: { increment: 1 } },
+        });
+        if (count === 0) {
+          throw new ConflictException('Attempt is no longer active');
+        }
+
+        return tx.attemptAnswer.upsert({
+          where: { attemptId_questionId: { attemptId, questionId } },
+          create: { attemptId, questionId, selectedOptionId },
+          update: { selectedOptionId },
+          select: gradingAnswerSelect,
+        });
+      }),
+    );
   }
 
-  /** Atomic IN_PROGRESS -> SUBMITTED transition. Returns how many rows were updated (0 or 1). */
-  async finalize(
-    attemptId: string,
-    data: {
-      submittedAt: Date;
-      score: number;
-      correctCount: number;
-      incorrectCount: number;
-    },
-  ) {
-    const { count } = await this.prisma.attempt.updateMany({
-      where: { id: attemptId, status: AttemptStatus.IN_PROGRESS },
-      data: { ...data, status: AttemptStatus.SUBMITTED },
-    });
+  /** Save grading and transition status using the same answer snapshot. */
+  submitInProgress(attemptId: string, userId: string, grade: GradeAttempt) {
+    return this.withWriteConflictRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const attempt = await tx.attempt.findFirst({
+          where: { id: attemptId, userId },
+          include: { exam: examInfo },
+        });
+        if (!attempt) throw new NotFoundException('Attempt not found');
+        if (attempt.status === AttemptStatus.CANCELLED) {
+          throw new ConflictException('Cancelled attempts cannot be submitted');
+        }
+        if (attempt.status === AttemptStatus.SUBMITTED) return attempt;
+
+        const { count } = await tx.attempt.updateMany({
+          where: { id: attemptId, userId, status: AttemptStatus.IN_PROGRESS },
+          data: { status: AttemptStatus.SUBMITTED },
+        });
+        if (count === 0) {
+          throw new ConflictException('Attempt is no longer active');
+        }
+
+        const [questions, answers] = await Promise.all([
+          tx.question.findMany({
+            where: { examId: attempt.examId },
+            orderBy: { position: 'asc' },
+            select: gradingQuestionSelect,
+          }),
+          tx.attemptAnswer.findMany({
+            where: { attemptId },
+            select: gradingAnswerSelect,
+          }),
+        ]);
+
+        return tx.attempt.update({
+          where: { id: attemptId },
+          data: grade(questions, answers, attempt),
+          include: { exam: examInfo },
+        });
+      }),
+    );
+  }
+
+  /** Preserve a cancelled attempt and its answers for history. */
+  async cancelInProgress(attemptId: string, userId: string) {
+    const { count } = await this.withWriteConflictRetry(() =>
+      this.prisma.attempt.updateMany({
+        where: { id: attemptId, userId, status: AttemptStatus.IN_PROGRESS },
+        data: { status: AttemptStatus.CANCELLED, cancelledAt: new Date() },
+      }),
+    );
     return count;
   }
 
-  /** Atomic delete guarded by owner + status. Returns how many rows were deleted (0 or 1). */
-  async deleteInProgress(attemptId: string, userId: string) {
-    const { count } = await this.prisma.attempt.deleteMany({
-      where: { id: attemptId, userId, status: AttemptStatus.IN_PROGRESS },
-    });
-    return count;
-  }
-
-  deleteAnswers(attemptId: string) {
-    return this.prisma.answer.deleteMany({ where: { attemptId } });
-  }
-
-  async history(
-    where: Prisma.AttemptWhereInput,
-    skip: number,
-    take: number,
-  ) {
+  async history(where: Prisma.AttemptWhereInput, skip: number, take: number) {
     const [items, total] = await Promise.all([
       this.prisma.attempt.findMany({
         where,
@@ -136,6 +233,7 @@ export class AttemptsRepository {
           startedAt: true,
           deadlineAt: true,
           submittedAt: true,
+          cancelledAt: true,
           score: true,
           totalQuestions: true,
           correctCount: true,
@@ -146,5 +244,26 @@ export class AttemptsRepository {
       this.prisma.attempt.count({ where }),
     ]);
     return { items, total };
+  }
+
+  private async withWriteConflictRetry<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (
+          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+          error.code !== 'P2034'
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    throw new ConflictException(
+      'Attempt changed concurrently. Please retry the operation',
+    );
   }
 }

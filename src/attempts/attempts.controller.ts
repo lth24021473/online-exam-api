@@ -33,7 +33,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ParseObjectIdPipe } from './parse-object-id.pipe';
 import { AttemptsService } from './attempts.service';
-import { SaveAnswerDto } from './dto/save-answer.dto'
+import { SaveAnswerDto } from './dto/save-answer.dto';
 
 @ApiTags('Attempts')
 @ApiBearerAuth()
@@ -42,12 +42,13 @@ import { SaveAnswerDto } from './dto/save-answer.dto'
 @Roles(Role.STUDENT)
 @Controller()
 export class AttemptsController {
-  constructor(private readonly attemptsService: AttemptsService) { }
+  constructor(private readonly attemptsService: AttemptsService) {}
 
   @Post('exams/:examId/attempts')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Start an attempt (or resume the running one) for a published exam',
+    summary:
+      'Start an attempt (or resume the running one) for a published exam',
   })
   @ApiNotFoundResponse({ description: 'Exam not found' })
   @ApiConflictResponse({ description: 'Exam is closed or has no questions' })
@@ -115,9 +116,13 @@ export class AttemptsController {
   @Delete('attempts/:attemptId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Cancel an attempt that has not been submitted' })
-  @ApiNoContentResponse({ description: 'Attempt and its answers deleted' })
+  @ApiNoContentResponse({
+    description: 'Attempt marked CANCELLED; answers retained',
+  })
   @ApiNotFoundResponse({ description: 'Attempt not found' })
-  @ApiConflictResponse({ description: 'Attempt already submitted' })
+  @ApiConflictResponse({
+    description: 'Attempt already submitted or cancelled',
+  })
   async cancel(
     @Req() request: AuthenticatedRequest,
     @Param('attemptId', ParseObjectIdPipe) attemptId: string,
@@ -126,7 +131,9 @@ export class AttemptsController {
   }
 
   @Get('attempts/:attemptId/result')
-  @ApiOperation({ summary: 'Score and per-question review of a submitted attempt' })
+  @ApiOperation({
+    summary: 'Score and per-question review of a submitted attempt',
+  })
   @ApiNotFoundResponse({ description: 'Attempt not found' })
   @ApiConflictResponse({ description: 'Attempt has not been submitted yet' })
   result(

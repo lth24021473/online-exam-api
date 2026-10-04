@@ -6,7 +6,7 @@ import { AttemptsRepository } from './attempts.repository';
 import { AttemptsService } from './attempts.service';
 
 @Module({
-  // AuthModule must export JwtModule + TokenRevocationService (needed by JwtAuthGuard).
+  // AuthModule exports the guards and JWT dependencies through AuthSecurityModule.
   imports: [PrismaModule, AuthModule],
   controllers: [AttemptsController],
   providers: [AttemptsService, AttemptsRepository],

@@ -15,3 +15,6 @@ yarn-debug.log*
 yarn-error.log*
 *.tsbuildinfo
 /src/generated/prisma
+
+# Local database backups and maintenance reports
+/.local/

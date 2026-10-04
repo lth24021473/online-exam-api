@@ -15,9 +15,13 @@ type ExamInfo = {
   durationMinutes: number;
 };
 
+type OwnedAttempt = NonNullable<
+  Awaited<ReturnType<AttemptsRepository['findById']>>
+>;
+
 @Injectable()
 export class AttemptsService {
-  constructor(private readonly repo: AttemptsRepository) { }
+  constructor(private readonly repo: AttemptsRepository) {}
 
   async start(userId: string, examId: string) {
     const exam = await this.repo.findExamForStart(examId);
@@ -59,7 +63,7 @@ export class AttemptsService {
   ) {
     const attempt = await this.getOwnedAttempt(userId, attemptId);
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
-      throw new ConflictException('Attempt has already been submitted');
+      throw new ConflictException('Attempt is no longer in progress');
     }
     if (attempt.deadlineAt.getTime() <= Date.now()) {
       throw new ConflictException('Time is over for this attempt');
@@ -70,24 +74,35 @@ export class AttemptsService {
       questionId,
     );
     if (!question) throw new NotFoundException('Question not found in exam');
-    if (selectedOptionIndex >= question.options.length) {
+    const option = question.options.find(
+      (o) => o.position === selectedOptionIndex,
+    );
+    if (
+      !Number.isInteger(selectedOptionIndex) ||
+      selectedOptionIndex < 0 ||
+      !option
+    ) {
       throw new ConflictException('Selected option does not exist');
     }
 
     const answer = await this.repo.upsertAnswer(
       attemptId,
+      userId,
       questionId,
-      selectedOptionIndex,
+      option.id,
     );
     return {
       questionId: answer.questionId,
-      selectedOptionIndex: answer.selectedOptionIndex,
+      selectedOptionIndex: answer.selectedOption.position,
       savedAt: answer.updatedAt,
     };
   }
 
   async submit(userId: string, attemptId: string) {
     const attempt = await this.getOwnedAttempt(userId, attemptId);
+    if (attempt.status === AttemptStatus.CANCELLED) {
+      throw new ConflictException('Cancelled attempts cannot be submitted');
+    }
     // Idempotent: submitting twice just returns the existing result.
     if (attempt.status === AttemptStatus.SUBMITTED) {
       return this.buildResult(attempt);
@@ -99,18 +114,19 @@ export class AttemptsService {
   async cancel(userId: string, attemptId: string) {
     const attempt = await this.getOwnedAttempt(userId, attemptId);
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
-      throw new ConflictException('Submitted attempts cannot be cancelled');
+      throw new ConflictException('Only in-progress attempts can be cancelled');
     }
-    // Claim the attempt atomically first, then remove its answers.
-    const deleted = await this.repo.deleteInProgress(attemptId, userId);
-    if (deleted === 0) {
+    const cancelled = await this.repo.cancelInProgress(attemptId, userId);
+    if (cancelled === 0) {
       throw new ConflictException('Attempt was already submitted or cancelled');
     }
-    await this.repo.deleteAnswers(attemptId);
   }
 
   async getResult(userId: string, attemptId: string) {
     let attempt = await this.getOwnedAttempt(userId, attemptId);
+    if (attempt.status === AttemptStatus.CANCELLED) {
+      throw new ConflictException('Cancelled attempts have no graded result');
+    }
     if (attempt.status === AttemptStatus.IN_PROGRESS) {
       if (attempt.deadlineAt.getTime() > Date.now()) {
         throw new ConflictException('Attempt has not been submitted yet');
@@ -183,51 +199,66 @@ export class AttemptsService {
         instructions: exam.instructions,
         durationMinutes: exam.durationMinutes,
       },
-      questions,
-      answers: answers.map(({ questionId, selectedOptionIndex }) => ({
+      questions: questions.map((q) => ({
+        id: q.id,
+        content: q.content,
+        position: q.position,
+        options: q.options.map((o) => o.content),
+      })),
+      answers: answers.map(({ questionId, selectedOption }) => ({
         questionId,
-        selectedOptionIndex,
+        selectedOptionIndex: selectedOption.position,
       })),
     };
   }
 
   private async finalize(attempt: Attempt) {
+    return this.repo.submitInProgress(
+      attempt.id,
+      attempt.userId,
+      (questions, answers, current) => {
+        const key = new Map(
+          questions.map((q) => {
+            const correctOptions = q.options.filter((o) => o.isCorrect);
+            if (correctOptions.length !== 1) {
+              throw new ConflictException(
+                'Each question must have one correct option',
+              );
+            }
+            return [q.id, correctOptions[0].id];
+          }),
+        );
+        const correctCount = answers.filter(
+          (a) => key.get(a.questionId) === a.selectedOptionId,
+        ).length;
+        const total = current.totalQuestions;
+        const now = new Date();
+        return {
+          submittedAt: now > current.deadlineAt ? current.deadlineAt : now,
+          correctCount,
+          incorrectCount: total - correctCount,
+          score: total
+            ? Math.round((correctCount / total) * MAX_SCORE * 100) / 100
+            : 0,
+        };
+      },
+    );
+  }
+
+  private async buildResult(attempt: OwnedAttempt) {
     const [questions, answers] = await Promise.all([
       this.repo.listQuestionsWithKey(attempt.examId),
       this.repo.listAnswers(attempt.id),
     ]);
-    const key = new Map(questions.map((q) => [q.id, q.correctOptionIndex]));
-    const correctCount = answers.filter(
-      (a) => key.get(a.questionId) === a.selectedOptionIndex,
-    ).length;
-    const total = attempt.totalQuestions;
-    const now = new Date();
-
-    await this.repo.finalize(attempt.id, {
-      submittedAt: now > attempt.deadlineAt ? attempt.deadlineAt : now,
-      correctCount,
-      incorrectCount: total - correctCount,
-      score: total ? Math.round((correctCount / total) * MAX_SCORE * 100) / 100 : 0,
-    });
-    const fresh = await this.repo.findById(attempt.id);
-    return fresh as Attempt;
-  }
-
-  private async buildResult(attempt: Attempt) {
-    const [questions, answers, withExam] = await Promise.all([
-      this.repo.listQuestionsWithKey(attempt.examId),
-      this.repo.listAnswers(attempt.id),
-      this.repo.findById(attempt.id),
-    ]);
     const selected = new Map(
-      answers.map((a) => [a.questionId, a.selectedOptionIndex]),
+      answers.map((a) => [a.questionId, a.selectedOptionId]),
     );
 
     return {
       attempt: {
         id: attempt.id,
         examId: attempt.examId,
-        examTitle: withExam?.exam.title ?? null,
+        examTitle: attempt.exam.title,
         status: attempt.status,
         startedAt: attempt.startedAt,
         deadlineAt: attempt.deadlineAt,
@@ -242,15 +273,20 @@ export class AttemptsService {
         unansweredCount: attempt.totalQuestions - answers.length,
       },
       questions: questions.map((q) => {
-        const selectedOptionIndex = selected.get(q.id) ?? null;
+        const selectedOptionId = selected.get(q.id);
+        const selectedOptionIndex =
+          q.options.find((o) => o.id === selectedOptionId)?.position ?? null;
+        const correctOption = q.options.find((o) => o.isCorrect);
         return {
           id: q.id,
           position: q.position,
           content: q.content,
-          options: q.options,
+          options: q.options.map((o) => o.content),
           selectedOptionIndex,
-          correctOptionIndex: q.correctOptionIndex,
-          isCorrect: selectedOptionIndex === q.correctOptionIndex,
+          correctOptionIndex: correctOption?.position ?? null,
+          isCorrect: Boolean(
+            correctOption && selectedOptionId === correctOption.id,
+          ),
         };
       }),
     };
