@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ExamStatus, Prisma } from '@prisma/client';
+import { ExamStatus, Prisma, Role } from '@prisma/client';
 
 import { ExamsService } from '../exams.service';
 import { QuestionsRepository } from './questions.repository';
@@ -18,28 +18,42 @@ export class QuestionsService {
     private readonly examsService: ExamsService,
   ) {}
 
-  private async assertEditableExam(examId: string, managerId: string) {
+  private async assertAccessibleExam(
+    examId: string,
+    managerId: string,
+    role: Role,
+    editable = false,
+  ) {
     const exam = await this.examsService.findOneOrFail(examId);
 
-    if (exam.managerId !== managerId) {
+    if (role !== Role.ADMIN && exam.managerId !== managerId) {
       throw new ForbiddenException('You do not own this exam');
     }
 
-    if (exam.status !== ExamStatus.DRAFT) {
+    if (editable && exam.status !== ExamStatus.DRAFT) {
       throw new BadRequestException('Only DRAFT exams can be modified');
     }
 
     return exam;
   }
 
-  async findAll(examId: string, managerId: string) {
-    await this.assertEditableExam(examId, managerId);
+  async findAll(
+    examId: string,
+    managerId: string,
+    role: Role = Role.EXAM_MANAGER,
+  ) {
+    await this.assertAccessibleExam(examId, managerId, role);
 
     return this.questionsRepository.findByExam(examId);
   }
 
-  async findOne(examId: string, id: string, managerId: string) {
-    await this.assertEditableExam(examId, managerId);
+  async findOne(
+    examId: string,
+    id: string,
+    managerId: string,
+    role: Role = Role.EXAM_MANAGER,
+  ) {
+    await this.assertAccessibleExam(examId, managerId, role);
 
     const question = await this.questionsRepository.findById(id);
 
@@ -50,8 +64,13 @@ export class QuestionsService {
     return question;
   }
 
-  async create(examId: string, managerId: string, dto: CreateQuestionDto) {
-    await this.assertEditableExam(examId, managerId);
+  async create(
+    examId: string,
+    managerId: string,
+    dto: CreateQuestionDto,
+    role: Role = Role.EXAM_MANAGER,
+  ) {
+    await this.assertAccessibleExam(examId, managerId, role, true);
 
     if (dto.correctOptionIndex >= dto.options.length) {
       throw new BadRequestException('correctOptionIndex is out of range');
@@ -68,7 +87,7 @@ export class QuestionsService {
       );
     }
 
-    return this.questionsRepository.create({
+    return this.questionsRepository.create(examId, {
       exam: {
         connect: {
           id: examId,
@@ -93,8 +112,9 @@ export class QuestionsService {
     id: string,
     managerId: string,
     dto: UpdateQuestionDto,
+    role: Role = Role.EXAM_MANAGER,
   ) {
-    await this.assertEditableExam(examId, managerId);
+    await this.assertAccessibleExam(examId, managerId, role, true);
 
     const question = await this.questionsRepository.findById(id);
 
@@ -106,14 +126,17 @@ export class QuestionsService {
       (option) => option.isCorrect,
     )?.position;
 
-    if (currentCorrectIndex === undefined) {
+    if (
+      currentCorrectIndex === undefined &&
+      dto.correctOptionIndex === undefined
+    ) {
       throw new BadRequestException('Question has no correct option');
     }
 
     const finalOptions =
       dto.options ?? question.options.map((option) => option.content);
 
-    const finalIndex = dto.correctOptionIndex ?? currentCorrectIndex;
+    const finalIndex = dto.correctOptionIndex ?? currentCorrectIndex!;
 
     if (finalIndex < 0 || finalIndex >= finalOptions.length) {
       throw new BadRequestException('correctOptionIndex is out of range');
@@ -152,11 +175,16 @@ export class QuestionsService {
       };
     }
 
-    return this.questionsRepository.update(id, data);
+    return this.questionsRepository.update(examId, id, data);
   }
 
-  async remove(examId: string, id: string, managerId: string) {
-    await this.assertEditableExam(examId, managerId);
+  async remove(
+    examId: string,
+    id: string,
+    managerId: string,
+    role: Role = Role.EXAM_MANAGER,
+  ) {
+    await this.assertAccessibleExam(examId, managerId, role, true);
 
     const question = await this.questionsRepository.findById(id);
 
@@ -164,6 +192,6 @@ export class QuestionsService {
       throw new NotFoundException('Question not found');
     }
 
-    await this.questionsRepository.delete(id);
+    await this.questionsRepository.delete(examId, id);
   }
 }

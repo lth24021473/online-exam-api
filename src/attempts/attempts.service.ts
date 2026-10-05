@@ -23,15 +23,17 @@ type OwnedAttempt = NonNullable<
 export class AttemptsService {
   constructor(private readonly repo: AttemptsRepository) {}
 
-  async start(userId: string, examId: string) {
+  async start(
+    userId: string,
+    examId: string,
+  ): Promise<
+    { resumed: boolean } &
+      Awaited<ReturnType<AttemptsService['buildSession']>>
+  > {
     const exam = await this.repo.findExamForStart(examId);
     if (!exam || exam.status === ExamStatus.DRAFT) {
       throw new NotFoundException('Exam not found');
     }
-    if (exam.status !== ExamStatus.PUBLISHED) {
-      throw new ConflictException('Exam is closed');
-    }
-
     const existing = await this.repo.findInProgress(userId, examId);
     if (existing) {
       if (existing.deadlineAt.getTime() > Date.now()) {
@@ -41,18 +43,28 @@ export class AttemptsService {
       await this.finalize(existing);
     }
 
+    // Closing an exam prevents new attempts while allowing a student to
+    // reload and finish the active attempt they already started.
+    if (exam.status !== ExamStatus.PUBLISHED) {
+      throw new ConflictException('Exam is closed');
+    }
+
     const totalQuestions = exam._count.questions;
     if (totalQuestions === 0) {
       throw new ConflictException('Exam has no questions');
     }
 
-    const attempt = await this.repo.create({
+    const { attempt, resumed } = await this.repo.createOrResume({
       userId,
       examId,
       totalQuestions,
       deadlineAt: new Date(Date.now() + exam.durationMinutes * 60_000),
     });
-    return { resumed: false, ...(await this.buildSession(attempt, exam)) };
+    if (resumed && attempt.deadlineAt.getTime() <= Date.now()) {
+      await this.finalize(attempt);
+      return this.start(userId, examId);
+    }
+    return { resumed, ...(await this.buildSession(attempt, exam)) };
   }
 
   async saveAnswer(
@@ -134,6 +146,27 @@ export class AttemptsService {
       attempt = await this.finalize(attempt);
     }
     return this.buildResult(attempt);
+  }
+
+  /** Used after an exam manager's ownership/role check, before reading results. */
+  async finalizeExpiredForExam(examId: string) {
+    for (;;) {
+      const expired = await this.repo.findExpiredForExam(examId, 50);
+      if (expired.length === 0) return;
+      for (const attempt of expired) {
+        try {
+          await this.finalize(attempt);
+        } catch (error) {
+          if (error instanceof ConflictException) {
+            const current = await this.repo.findById(attempt.id);
+            if (!current || current.status !== AttemptStatus.IN_PROGRESS) {
+              continue;
+            }
+          }
+          throw error;
+        }
+      }
+    }
   }
 
   async getHistory(

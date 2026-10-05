@@ -33,10 +33,13 @@ describe('AttemptsRepository write conflict retries', () => {
     selectedOption: { position: 0 },
   };
   const tx = {
+    exam: { findUnique: jest.fn(), updateMany: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn() },
     attempt: {
       findFirst: jest.fn(),
       updateMany: jest.fn(),
       update: jest.fn(),
+      create: jest.fn(),
     },
     attemptAnswer: { upsert: jest.fn(), findMany: jest.fn() },
     question: { findMany: jest.fn() },
@@ -56,6 +59,11 @@ describe('AttemptsRepository write conflict retries', () => {
         operation(tx),
     );
     tx.attempt.findFirst.mockResolvedValue(attempt);
+    tx.user.findUnique.mockResolvedValue({ updatedAt: new Date() });
+    tx.user.update.mockResolvedValue({});
+    tx.exam.findUnique.mockResolvedValue({ updatedAt: new Date() });
+    tx.exam.updateMany.mockResolvedValue({ count: 1 });
+    tx.attempt.create.mockResolvedValue(attempt);
     tx.attempt.updateMany.mockResolvedValue({ count: 1 });
     tx.attemptAnswer.upsert.mockResolvedValue(answer);
     tx.attemptAnswer.findMany.mockResolvedValue([answer]);
@@ -71,6 +79,51 @@ describe('AttemptsRepository write conflict retries', () => {
       correctCount: 1,
       incorrectCount: 0,
     });
+  });
+
+  it('resumes an existing attempt without writing the account or creating another attempt', async () => {
+    const result = await repository.createOrResume({
+      userId: attempt.userId,
+      examId: attempt.examId,
+      deadlineAt: attempt.deadlineAt,
+      totalQuestions: attempt.totalQuestions,
+    });
+    expect(result).toEqual({ attempt, resumed: true });
+    expect(tx.user.update).not.toHaveBeenCalled();
+    expect(tx.exam.updateMany).not.toHaveBeenCalled();
+    expect(tx.attempt.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a new attempt when the exam no longer has published status inside its transaction', async () => {
+    tx.attempt.findFirst.mockResolvedValue(null);
+    tx.exam.updateMany.mockResolvedValue({ count: 0 });
+    await expect(repository.createOrResume({
+      userId: attempt.userId,
+      examId: attempt.examId,
+      deadlineAt: attempt.deadlineAt,
+      totalQuestions: attempt.totalQuestions,
+    })).rejects.toMatchObject({ status: 409, message: 'Exam is closed' });
+    expect(tx.attempt.create).not.toHaveBeenCalled();
+  });
+
+  it('retries a concurrent start with a fresh transaction and advances the account timestamp without changing its JWT version', async () => {
+    const updatedAt = new Date(Date.now() + 1000);
+    tx.attempt.findFirst.mockResolvedValue(null);
+    tx.user.findUnique.mockResolvedValue({ updatedAt });
+    tx.user.update.mockRejectedValueOnce(writeConflict());
+    const result = await repository.createOrResume({
+      userId: attempt.userId,
+      examId: attempt.examId,
+      deadlineAt: attempt.deadlineAt,
+      totalQuestions: attempt.totalQuestions,
+    });
+    expect(result).toEqual({ attempt, resumed: false });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.attempt.create).toHaveBeenCalledTimes(1);
+    expect(tx.user.update.mock.calls[1][0].data.updatedAt.getTime()).toBe(
+      updatedAt.getTime() + 1,
+    );
+    expect(tx.user.update.mock.calls[1][0].data).not.toHaveProperty('authVersion');
   });
 
   describe.each(['save', 'submit', 'cancel'] as const)('%s', (operation) => {

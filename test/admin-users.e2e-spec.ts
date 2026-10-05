@@ -485,6 +485,25 @@ describe('Admin user permissions and account sessions (HTTP)', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  it.each(['invalid-id', '22222222222222222222222z', '2222222222222222222222222'])(
+    'rejects malformed account ID %s before querying or modifying it',
+    async (id) => {
+      prisma.user.findUnique.mockClear();
+      await get(`admin/users/${id}`, adminToken).expect(400);
+      await changeRole(Role.ADMIN, id).expect(400);
+      await request(app.getHttpServer())
+        .delete(`/api/v1/admin/users/${id}`)
+        .auth(adminToken, { type: 'bearer' })
+        .expect(400);
+      for (const [{ where }] of prisma.user.findUnique.mock.calls) {
+        expect(where.id).not.toBe(id);
+      }
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(prisma.user.delete).not.toHaveBeenCalled();
+      await get('permission-test/student').expect(200);
+    },
+  );
+
   it.each(['P2014', 'P2003'])(
     'returns 409 for a related-account deletion failure %s and preserves its sessions',
     async (code) => {

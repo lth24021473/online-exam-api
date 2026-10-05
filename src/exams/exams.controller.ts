@@ -1,11 +1,28 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus,
-  Param, Patch, Post, Put, Req, UseGuards,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse,
-  ApiNoContentResponse, ApiNotFoundResponse, ApiOkResponse,
-  ApiOperation, ApiTags, ApiUnauthorizedResponse,
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,6 +32,8 @@ import { Roles } from '../auth/roles.decorator';
 import { ExamsService } from './exams.service';
 import { CreateExamDto } from './dto/create-exam.dto';
 import { UpdateExamDto } from './dto/update-exam.dto';
+import { ExamResultsQueryDto } from './dto/exam-results-query.dto';
+import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 
 @ApiTags('Exams')
 @ApiBearerAuth()
@@ -24,7 +43,7 @@ export class ExamsController {
   constructor(private readonly examsService: ExamsService) {}
 
   @Post()
-  @Roles(Role.EXAM_MANAGER)
+  @Roles(Role.EXAM_MANAGER, Role.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '[EXAM_MANAGER] Create a new exam (DRAFT)' })
   @ApiCreatedResponse({ description: 'Exam created in DRAFT status' })
@@ -36,19 +55,51 @@ export class ExamsController {
 
   @Get()
   @Roles(Role.EXAM_MANAGER, Role.STUDENT, Role.ADMIN)
-  @ApiOperation({ summary: 'List exams — admin: all; manager: own; student: published' })
+  @ApiOperation({
+    summary: 'List exams — admin: all; manager: own; student: published',
+  })
   @ApiOkResponse({ description: 'List of exams' })
   findAll(@Req() req: AuthenticatedRequest) {
     return this.examsService.findAll(req.user.id, req.user.role as Role);
   }
 
+  @Get(':id/results')
+  @Roles(Role.EXAM_MANAGER, Role.ADMIN)
+  @ApiOperation({
+    summary:
+      '[EXAM_MANAGER/ADMIN] Paginated exam attempts and overall score statistics',
+  })
+  @ApiOkResponse({
+    description:
+      'Safe student identities, backend grades, pagination and exam-wide statistics',
+  })
+  @ApiForbiddenResponse({
+    description: 'Not the exam owner or insufficient role',
+  })
+  @ApiNotFoundResponse({ description: 'Exam not found' })
+  results(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ExamResultsQueryDto,
+  ) {
+    return this.examsService.results(id, req.user.id, req.user.role, query);
+  }
+
   @Get(':id')
   @Roles(Role.EXAM_MANAGER, Role.STUDENT, Role.ADMIN)
-  @ApiOperation({ summary: 'Get exam detail — admin: any; manager: own; student: published only' })
+  @ApiOperation({
+    summary:
+      'Get exam detail — admin: any; manager: own; student: published only',
+  })
   @ApiOkResponse({ description: 'Exam detail with questions' })
   @ApiNotFoundResponse({ description: 'Exam not found' })
-  @ApiForbiddenResponse({ description: 'Not published (student) or not owner (manager)' })
-  findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  @ApiForbiddenResponse({
+    description: 'Not published (student) or not owner (manager)',
+  })
+  findOne(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.examsService.findOne(id, req.user.id, req.user.role as Role);
   }
 
@@ -59,11 +110,16 @@ export class ExamsController {
   @ApiNotFoundResponse({ description: 'Exam not found' })
   @ApiForbiddenResponse({ description: 'Not the owner or insufficient role' })
   update(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateExamDto,
   ) {
-    return this.examsService.update(id, req.user.id, dto, req.user.role as Role);
+    return this.examsService.update(
+      id,
+      req.user.id,
+      dto,
+      req.user.role as Role,
+    );
   }
 
   @Delete(':id')
@@ -73,7 +129,10 @@ export class ExamsController {
   @ApiNoContentResponse({ description: 'Exam deleted' })
   @ApiNotFoundResponse({ description: 'Exam not found' })
   @ApiForbiddenResponse({ description: 'Not the owner or not DRAFT' })
-  async remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async remove(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     await this.examsService.remove(id, req.user.id, req.user.role as Role);
   }
 
@@ -82,8 +141,13 @@ export class ExamsController {
   @ApiOperation({ summary: '[EXAM_MANAGER/ADMIN] Publish a DRAFT exam' })
   @ApiOkResponse({ description: 'Exam is now PUBLISHED' })
   @ApiNotFoundResponse({ description: 'Exam not found' })
-  @ApiForbiddenResponse({ description: 'Not the owner, not DRAFT, or no questions' })
-  publish(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  @ApiForbiddenResponse({
+    description: 'Not the owner, not DRAFT, or no questions',
+  })
+  publish(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.examsService.publish(id, req.user.id, req.user.role as Role);
   }
 
@@ -93,7 +157,10 @@ export class ExamsController {
   @ApiOkResponse({ description: 'Exam is now CLOSED' })
   @ApiNotFoundResponse({ description: 'Exam not found' })
   @ApiForbiddenResponse({ description: 'Not the owner or not PUBLISHED' })
-  close(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  close(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.examsService.close(id, req.user.id, req.user.role as Role);
   }
 }

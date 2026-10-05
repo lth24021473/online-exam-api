@@ -18,3 +18,9 @@ yarn-error.log*
 
 # Local database backups and maintenance reports
 /.local/
+
+# Benchmark binaries, credentials, source archives and temporary logs
+/benchmarks/.tools/
+/benchmarks/.generated/
+/benchmarks/__pycache__/
+/benchmarks/source-provenance.json

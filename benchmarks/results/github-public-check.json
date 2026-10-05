@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-05T07:56:52.926Z",
+  "method": "GitHub REST repository metadata without Authorization or cookies",
+  "repositories": [
+    {
+      "repository": "lth24021473/online-exam-api",
+      "url": "https://github.com/lth24021473/online-exam-api",
+      "anonymousHttpStatus": 200,
+      "verifiedPublic": true,
+      "result": "public"
+    },
+    {
+      "repository": "lth24021473/online-exam-front",
+      "url": "https://github.com/lth24021473/online-exam-front",
+      "anonymousHttpStatus": 200,
+      "verifiedPublic": true,
+      "result": "public"
+    }
+  ],
+  "allPublic": true
+}

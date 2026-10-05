@@ -78,7 +78,7 @@ class InMemoryAttemptsRepository {
     title: 'Sample exam',
     instructions: 'Select one answer per question.',
     durationMinutes: 30,
-    status: ExamStatus.PUBLISHED,
+    status: ExamStatus.PUBLISHED as ExamStatus,
     _count: { questions: 2 },
   };
   readonly questions: QuestionFixture[] = [
@@ -139,12 +139,14 @@ class InMemoryAttemptsRepository {
     );
   }
 
-  create(data: {
+  createOrResume(data: {
     userId: string;
     examId: string;
     deadlineAt: Date;
     totalQuestions: number;
   }) {
+    const existing = this.findInProgress(data.userId, data.examId);
+    if (existing) return { attempt: { ...existing }, resumed: true };
     const id = (this.attempts.size + 1).toString(16).padStart(24, '0');
     const attempt: AttemptWithExam = {
       id,
@@ -161,7 +163,7 @@ class InMemoryAttemptsRepository {
     };
     this.attempts.set(id, attempt);
     this.answers.set(id, []);
-    return { ...attempt };
+    return { attempt: { ...attempt }, resumed: false };
   }
 
   findById(id: string) {
@@ -405,6 +407,27 @@ describe('Attempts HTTP API (e2e, in-memory persistence)', () => {
       .auth(token, { type: 'bearer' })
       .send({ selectedOptionIndex });
   }
+
+  it('resumes an active attempt after its exam closes and prevents a new attempt after submission', async () => {
+    const session = await start();
+    await save(session.attempt.id, QUESTION_IDS[0], 1).expect(200);
+    repo.exam.status = ExamStatus.CLOSED;
+    const resumed = await start();
+    expect(resumed.resumed).toBe(true);
+    expect(resumed.attempt.id).toBe(session.attempt.id);
+    expect(resumed.answers).toEqual([
+      { questionId: QUESTION_IDS[0], selectedOptionIndex: 1 },
+    ]);
+    expect(JSON.stringify(resumed)).not.toMatch(/correctOptionIndex|isCorrect/);
+    await request(app.getHttpServer())
+      .post(`/api/v1/attempts/${session.attempt.id}/submit`)
+      .auth(studentToken, { type: 'bearer' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/exams/${EXAM_ID}/attempts`)
+      .auth(studentToken, { type: 'bearer' })
+      .expect(409);
+  });
 
   it('registers attempt routes and completes start, resume, change answer, submit, result and history', async () => {
     const session = await start();
