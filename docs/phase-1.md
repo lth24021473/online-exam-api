@@ -19,7 +19,7 @@ Frontend thực nằm riêng tại `D:/online-exam-front`, không nằm trong ba
 3. ADMIN vào Quản trị, xem user, đổi quyền STUDENT → EXAM_MANAGER. Token cũ bị vô hiệu hóa; user đăng nhập lại bằng quyền mới. Xóa user còn sở hữu đề/bài làm trả 409 để giữ dữ liệu.
 4. EXAM_MANAGER vào Quản lý đề, tạo bản nháp, thêm/sửa/xóa câu hỏi, chọn đáp án đúng và mở đề. Mỗi câu ít nhất hai lựa chọn và đúng một đáp án đúng. Đề mở khóa chỉnh sửa nội dung.
 5. STUDENT chọn đề, làm bài, đổi đáp án, reload và thử mất mạng rồi kết nối lại. Đồng hồ giữ deadline ban đầu, trạng thái lưu/lỗi/thử lại hiển thị rõ.
-6. Nộp bài, xem điểm backend và lịch sử. Nộp lặp trả lại cùng kết quả. Hủy lượt khác giữ CANCELLED cùng đáp án; hết giờ chấm dữ liệu đã lưu.
+6. Nộp bài, xem điểm backend và lịch sử. Nộp lặp trả lại cùng kết quả. Hủy lượt khác còn hạn giữ CANCELLED cùng đáp án; hết giờ chỉ xem kết quả và chấm dữ liệu đã lưu. API từ chối hủy sau deadline, kể cả yêu cầu đến MongoDB muộn.
 7. Manager mở Kết quả học sinh: lọc trạng thái/phân trang, xem số đúng/sai/điểm và thống kê toàn đề. Bài hết giờ được chấm trước khi trả bảng.
 8. Manager đóng đề: lượt mới bị chặn, bài đang làm vẫn tiếp tục sau reload và nộp được. Xóa một đề nháp có câu hỏi để chứng minh cleanup phụ thuộc.
 
@@ -29,7 +29,7 @@ Các giao dịch bảo vệ bắt đầu đồng thời (một bài đang làm),
 
 API đã kiểm tra build, lint, Prisma validate, 37 test đơn vị và 99 test e2e gồm các suite MongoDB thật. Các suite Auth/Attempt/Exam dùng database riêng có hậu tố `_codex_test`; fixture dọn theo ID sở hữu, không reset database ứng dụng. Seed và migration legacy có kiểm tra tính lặp lại và bảo toàn bài/đáp án đã lưu.
 
-Frontend:
+Frontend: Lượt cuối có 97 test giao diện pass (gồm bố cục desktop/mobile, thông báo 1 giây, hồ sơ mới nhất và ba regression lịch sử qua deadline). Ba test real tách riêng chạy bằng runner opt-in; cả ba luồng API thật Manager–Student–kết quả, ADMIN/JWT và Attempt đều pass.
 
 ```sh
 npm run lint
@@ -44,7 +44,7 @@ Ba runner real dùng API/MongoDB Docker hiện có và tài khoản/đề kiểm
 
 ## Baseline và nguồn công khai
 
-[Hướng dẫn và kết quả Kaggle CPU](../benchmarks/README.md) chứa notebook, source/workload hash, runtime và summary/report thật. Cấu hình cố định: 10 VU, warmup 10s, đo 60s; 10 học sinh, một đề 20 câu × 4 lựa chọn, một bài nộp/học sinh; bốn GET có JWT. Chỉ số gồm p50/p95/p99, RPS, tỷ lệ lỗi, số request và concurrency. Giữ cùng cấu hình/workload/dataset khi so sánh pha 2.
+[Hướng dẫn và kết quả Kaggle CPU](../benchmarks/README.md) chứa notebook, source/workload hash, runtime và summary/report thật. Cấu hình cố định: 10 VU, warmup 10s, đo 60s; 10 học sinh, một đề 20 câu × 4 lựa chọn, một bài nộp/học sinh; bốn GET có JWT. Baseline chọn commit sạch `e26dbb0`: 8228 request, 0 lỗi, 137.133 request/s; p50/p95/p99 = 8.532/15.815/23.281 ms. Chỉ số gồm p50/p95/p99, RPS, tỷ lệ lỗi, số request và concurrency. Giữ cùng cấu hình/workload/dataset khi so sánh pha 2.
 
 [Backend GitHub](https://github.com/lth24021473/online-exam-api) và [frontend GitHub](https://github.com/lth24021473/online-exam-front) Public. Kiểm chứng ẩn danh bằng `npm run github:check-public`; không suy ra Public chỉ từ việc push thành công.
 

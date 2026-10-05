@@ -4,21 +4,23 @@ Mục tiêu: đo API hiện tại trên **Kaggle CPU** bằng k6; giữ cấu h�
 
 ## Kết quả đo thực ngày 05/10/2026
 
-Baseline được chọn là lần chạy lúc **14:47:56 giờ Việt Nam** trên Kaggle CPU (Ubuntu 24.04.5, 4 logical CPU Intel Xeon 2.20 GHz, Accelerator None). Đã lấy nguyên bản file từ output của notebook, kiểm SHA256 và chạy lại bộ kiểm tra report trên máy local; report tạo lại khớp bytes với bản Kaggle. MongoDB riêng do bootstrap tạo đã dừng sau khi dọn fixture.
+Baseline được chọn là lần chạy lúc **23:20:34 giờ Việt Nam** trên Kaggle CPU (Ubuntu 24.04.5, 4 logical CPU Intel Xeon 2.20 GHz, Accelerator None). Source lúc đo là commit `e26dbb0103c7ca14c6ffeaa4fc62399396d51c0c`, working tree sạch. Đã lấy nguyên bản ba artifacts từ output notebook, kiểm SHA256 và tái tạo report trên máy local; report khớp bytes với bản Kaggle. MongoDB benchmark riêng đã dừng sau khi dọn fixture.
 
 | Chỉ số | Kết quả |
 | --- | ---: |
-| p50 / p95 / p99 | 8.163 / 13.515 / 19.462 ms |
-| Throughput | 139.300 request/s |
-| Requests / lỗi | 8358 / 0 |
+| p50 / p95 / p99 | 8.532 / 15.815 / 23.281 ms |
+| Throughput | 137.133 request/s |
+| Requests / lỗi | 8228 / 0 |
 | VU cấu hình / quan sát | 10 / 10 |
 | Warmup / đo | 10s / 60s |
 
-Artifacts: [báo cáo](results/kaggle-cpu-2026-10-05T07-47-56-834Z-f7280e.md), [summary JSON](results/kaggle-cpu-2026-10-05T07-47-56-834Z-f7280e.summary.json), [runtime/provenance](results/kaggle-cpu-2026-10-05T07-47-56-834Z-f7280e.runtime.json). Summary SHA256: `a1f4ad93d32b9e4a03c293b8226d2031d28c0c821d2cae978c251255bf6541df`. Source archive SHA256: `b688cb5a375f7f8fbf466f4b4092cb51a2f0348675279babfa193acba4b546b1`.
+Artifacts: [báo cáo](results/kaggle-cpu-2026-10-05T16-20-34-295Z-3cad7c.md), [summary JSON](results/kaggle-cpu-2026-10-05T16-20-34-295Z-3cad7c.summary.json), [runtime/provenance](results/kaggle-cpu-2026-10-05T16-20-34-295Z-3cad7c.runtime.json). Summary SHA256: `c756ba5cf161fbc049683ad8abb122232eae0da55bceabcaf99c0780c9fa1082`. Source archive SHA256: `e063cfffa1c60c8894ae0e3d01128709670e9ba6b633233110066a4b30a966e7`.
 
-[Notebook Kaggle của hiesew](https://www.kaggle.com/code/hiesew/online-exam-phase-1-cpu-baseline) giữ Private theo chấp thuận của chủ tài khoản. Phiên đo đầu lúc 10:19 có 8194 request nhưng session tạm đã hết hạn trước khi lấy đủ artifacts; không dùng số liệu đó làm baseline được chọn. Bản Quick Save Output đầu tiên còn ở hàng đợi khi kiểm tra; ba file đã tải về ở trên là bằng chứng đo hoàn chỉnh, không phụ thuộc vào việc hàng đợi đó kết thúc.
+[Notebook Kaggle của hiesew](https://www.kaggle.com/code/hiesew/online-exam-phase-1-cpu-baseline) và input source giữ Private theo chấp thuận của chủ tài khoản. Artifacts tải về và lưu trong repo là bằng chứng của lần đo hoàn chỉnh; không phụ thuộc vào hàng đợi Save Version của Kaggle. Lần đo 14:47:56 (8358 request, source còn thay đổi chưa commit) vẫn được giữ trong `results` để truy vết, nhưng không là baseline được chọn.
 
-Cả [backend](https://github.com/lth24021473/online-exam-api) và [frontend](https://github.com/lth24021473/online-exam-front) đã xác minh **Public** qua GitHub REST không Authorization/cookies; xem [kết quả kiểm tra](results/github-public-check.json). Những sửa local trong lượt này chưa commit/push; trạng thái Public không có nghĩa GitHub đã chứa các sửa đó.
+Các sửa frontend, tài liệu và bảo vệ hủy bài sau deadline được bổ sung sau lần đo. Số liệu ở trên chỉ được gán cho commit đo `e26dbb0`; workload đọc bốn GET được giữ nguyên và không đo tải hủy/nộp bài.
+
+Cả [backend](https://github.com/lth24021473/online-exam-api) và [frontend](https://github.com/lth24021473/online-exam-front) đã xác minh **Public** qua GitHub REST không Authorization/cookies; xem [kết quả kiểm tra](results/github-public-check.json). Code pha 1 và artifacts được lưu bằng commit riêng trong hai repo.
 
 ## Cấu hình cố định
 
