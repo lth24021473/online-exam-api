@@ -12,6 +12,7 @@ const projectDirectory = resolve(__dirname, '..');
 describeMongo('Legacy option migration (real MongoDB, opt-in)', () => {
   let prisma: PrismaClient;
   let databaseUrl: string;
+  let ownedDatabaseName: string;
   let fixture: {
     managerId: string;
     studentId: string;
@@ -23,10 +24,21 @@ describeMongo('Legacy option migration (real MongoDB, opt-in)', () => {
   const savedAt = '2026-01-01T00:05:00.123Z';
 
   beforeEach(() => {
-    // Each test creates its own database. The supplied database and .env database
-    // are never queried or modified; no collection/database cleanup is needed.
+    // Each test owns one random local database. The supplied and .env databases
+    // are never queried or modified.
     const target = new URL(mongoTestUrl!);
-    target.pathname = `/online_exam_migration_codex_test_${randomBytes(6).toString('hex')}`;
+    if (
+      target.protocol !== 'mongodb:' ||
+      !['127.0.0.1', 'localhost'].includes(target.hostname) ||
+      target.username ||
+      target.password
+    ) {
+      throw new Error(
+        'Migration tests require an explicit local MongoDB URL without credentials',
+      );
+    }
+    ownedDatabaseName = `online_exam_migration_codex_test_${randomBytes(6).toString('hex')}`;
+    target.pathname = `/${ownedDatabaseName}`;
     databaseUrl = target.toString();
     prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     fixture = {
@@ -40,7 +52,30 @@ describeMongo('Legacy option migration (real MongoDB, opt-in)', () => {
   });
 
   afterEach(async () => {
-    await prisma?.$disconnect();
+    if (!prisma) return;
+    try {
+      // Legacy documents may not match today's schema, so remove only this
+      // run's whole disposable database after checking its exact identity.
+      if (
+        !/^online_exam_migration_codex_test_[a-f\d]{12}$/.test(
+          ownedDatabaseName,
+        ) ||
+        new URL(databaseUrl).pathname !== `/${ownedDatabaseName}`
+      ) {
+        throw new Error(
+          'Refusing cleanup outside the current migration test database',
+        );
+      }
+      const database = await prisma.$runCommandRaw({ dbStats: 1 });
+      if (database.db !== ownedDatabaseName) {
+        throw new Error('Migration cleanup database identity does not match');
+      }
+      const result = await prisma.$runCommandRaw({ dropDatabase: 1 });
+      if (result.ok !== 1)
+        throw new Error('Migration test database cleanup failed');
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   async function insert(collection: string, document: Prisma.InputJsonObject) {

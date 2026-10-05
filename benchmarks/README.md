@@ -36,6 +36,8 @@ API, MongoDB và k6 chạy cùng máy CPU trong notebook. Đây là baseline c�
 
 Chỉ dùng MongoDB hiện có, không tạo Docker Mongo mới. Database benchmark phải mới, rỗng, trên loopback, tên `online_exam_*_benchmark`. Wrapper từ chối database chính, remote/Atlas hoặc URL có credentials.
 
+Installer giữ binary k6 trong `.tools`, tự dọn archive và thư mục giải nén tạm của lần cài kể cả khi lỗi. Bản k6 đang có chỉ được thay sau khi tải và kiểm tra checksum thành công.
+
 ```powershell
 npm run benchmark:install
 $env:BENCH_DATABASE_URL='mongodb://127.0.0.1:27017/online_exam_phase1_local_20261005_benchmark?replicaSet=rs0&directConnection=true'
