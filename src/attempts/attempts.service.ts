@@ -128,6 +128,9 @@ export class AttemptsService {
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
       throw new ConflictException('Only in-progress attempts can be cancelled');
     }
+    if (attempt.deadlineAt.getTime() <= Date.now()) {
+      throw new ConflictException('Time is over for this attempt');
+    }
     const cancelled = await this.repo.cancelInProgress(attemptId, userId);
     if (cancelled === 0) {
       throw new ConflictException('Attempt was already submitted or cancelled');

@@ -222,7 +222,7 @@ describeMongo('Attempts with real MongoDB', () => {
     );
   });
 
-  it('grades an expired attempt through GET result and retains the exam relation', async () => {
+  it('prevents cancellation after expiry and grades saved answers through GET result', async () => {
     const session = await start().expect(201);
     const attemptId = session.body.attempt.id;
     await save(attemptId, questionIds[0], 1).expect(200);
@@ -231,6 +231,19 @@ describeMongo('Attempts with real MongoDB', () => {
       where: { id: attemptId },
       data: { deadlineAt },
     });
+    // The database guard also protects a cancellation that reaches MongoDB
+    // after the deadline, even if its service check ran just before expiry.
+    expect(
+      await app.get(AttemptsRepository).cancelInProgress(attemptId, studentId),
+    ).toBe(0);
+    await request(app.getHttpServer())
+      .delete(`/api/v1/attempts/${attemptId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(409);
+    expect(
+      await prisma.attempt.findUniqueOrThrow({ where: { id: attemptId } }),
+    ).toMatchObject({ status: AttemptStatus.IN_PROGRESS, cancelledAt: null });
+    expect(await prisma.attemptAnswer.count({ where: { attemptId } })).toBe(1);
     const result = await request(app.getHttpServer())
       .get(`/api/v1/attempts/${attemptId}/result`)
       .set('Authorization', `Bearer ${token}`)

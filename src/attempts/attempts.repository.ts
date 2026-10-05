@@ -280,7 +280,12 @@ export class AttemptsRepository {
   async cancelInProgress(attemptId: string, userId: string) {
     const { count } = await this.withWriteConflictRetry(() =>
       this.prisma.attempt.updateMany({
-        where: { id: attemptId, userId, status: AttemptStatus.IN_PROGRESS },
+        where: {
+          id: attemptId,
+          userId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: { gt: new Date() },
+        },
         data: { status: AttemptStatus.CANCELLED, cancelledAt: new Date() },
       }),
     );
