@@ -40,18 +40,6 @@ Trong thư mục frontend riêng `D:/online-exam-front`, cấu hình `VITE_API_U
 
 Frontend có đăng ký/đăng nhập, kiểm tra phiên khi tải lại, điều hướng theo cả ba quyền, đăng xuất trong **Cài đặt**, và quản lý tài khoản tại `/admin/users`. Đổi quyền/xóa chính mình kết thúc phiên tương ứng; response trễ từ phiên trước không xóa phiên mới. Mất mạng khi kiểm tra phiên hiển thị lỗi/thử lại.
 
-## Kiểm tra phần người 1
-
-```sh
-npm run build
-npm run lint
-npm test -- --runInBand
-npm run test:e2e -- --runInBand
-npm run benchmark:test
-```
-
-Real MongoDB suite chỉ chạy khi đặt `MONGO_TEST_DATABASE_URL` trỏ database có hậu tố `_codex_test`. Đồng bộ schema vào **database kiểm thử riêng đó** trước rồi chạy `test/admin-mongo.e2e-spec.ts`. Không dùng database ứng dụng cho suite này. Frontend có `npm run test:e2e:admin-real` kiểm tra quản trị, đổi quyền, JWT cũ, xóa user và đăng xuất bằng UI với API thật; runner chỉ dọn fixture do mình tạo.
-
 ## Quản lý đề thi, câu hỏi và kết quả
 
 Luồng đầy đủ Controller → Service → Repository → Prisma → MongoDB được dùng cho Auth/User/ADMIN, Exam/Question và Attempt. Schema gồm User, Exam, Question, Option, Attempt, AttemptAnswer (collection MongoDB `Answer`) và RevokedToken; hủy bài giữ trạng thái CANCELLED cùng đáp án.
