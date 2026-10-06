@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { AttemptStatus, ExamStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
@@ -63,24 +64,44 @@ export class ExamsRepository {
   delete(id: string) {
     return retryExamWrite(() =>
       this.prisma.$transaction(async (tx) => {
-        await lockExamStatus(tx, id, ExamStatus.DRAFT);
-        if (await tx.attempt.count({ where: { examId: id } })) {
-          throw new ConflictException('Exams with attempts cannot be deleted');
-        }
+        const exam = await tx.exam.findUnique({
+          where: { id },
+          select: { status: true },
+        });
+        if (!exam) throw new NotFoundException('Exam not found');
+        // Serialize deletion with edits, status changes and new attempts.
+        await lockExamStatus(tx, id, exam.status);
         const questions = await tx.question.findMany({
           where: { examId: id },
           select: { id: true },
         });
         const questionIds = questions.map((question) => question.id);
+        const attempts = await tx.attempt.findMany({
+          where: { examId: id },
+          select: { id: true },
+        });
+        const attemptIds = attempts.map((attempt) => attempt.id);
+        // Refuse inconsistent cross-exam references rather than deleting
+        // answers belonging to another exam.
         if (
           await tx.attemptAnswer.count({
-            where: { questionId: { in: questionIds } },
+            where: {
+              attemptId: { notIn: attemptIds },
+              OR: [
+                { questionId: { in: questionIds } },
+                { selectedOption: { questionId: { in: questionIds } } },
+              ],
+            },
           })
         ) {
           throw new ConflictException(
-            'Questions with answers cannot be deleted',
+            'Exam content is referenced by another exam attempt',
           );
         }
+        await tx.attemptAnswer.deleteMany({
+          where: { attemptId: { in: attemptIds } },
+        });
+        await tx.attempt.deleteMany({ where: { examId: id } });
         await tx.option.deleteMany({
           where: { questionId: { in: questionIds } },
         });

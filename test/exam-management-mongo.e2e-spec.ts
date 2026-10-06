@@ -181,7 +181,6 @@ describeMongo('Exam management with real MongoDB', () => {
       .send({ content: 'Changed' })
       .expect(400);
     await call('delete', `/exams/${id}/questions/${q.id}`).expect(400);
-    await call('delete', `/exams/${id}`).expect(400);
     await call('put', `/exams/${id}/close`).expect(200);
     await call('get', `/exams/${id}`, student).expect(403);
   });
@@ -303,23 +302,166 @@ describeMongo('Exam management with real MongoDB', () => {
     ).toBe(2);
   });
 
-  it('blocks deleting a draft that already has attempts', async () => {
+  it.each(Object.values(ExamStatus))(
+    'permanently deletes a %s exam and all its attempts/answers while preserving other data',
+    async (status) => {
+      const id = await draft();
+      const q = await question(id);
+      const preservedId = await draft();
+      const preservedQuestion = await question(preservedId);
+      const preservedAttempt = await prisma.attempt.create({
+        data: {
+          examId: preservedId,
+          userId: student.id,
+          status: AttemptStatus.SUBMITTED,
+          deadlineAt: new Date(),
+          totalQuestions: 1,
+          score: 10,
+        },
+      });
+      const preservedAnswer = await prisma.attemptAnswer.create({
+        data: {
+          attemptId: preservedAttempt.id,
+          questionId: preservedQuestion.id,
+          selectedOptionId: preservedQuestion.options[1].id,
+        },
+      });
+      const studentBefore = await prisma.user.findUniqueOrThrow({
+        where: { id: student.id },
+      });
+      const attemptIds: string[] = [];
+      for (const attemptStatus of [
+        AttemptStatus.SUBMITTED,
+        AttemptStatus.IN_PROGRESS,
+        AttemptStatus.CANCELLED,
+      ]) {
+        const attempt = await prisma.attempt.create({
+          data: {
+            examId: id,
+            userId: student.id,
+            status: attemptStatus,
+            deadlineAt: new Date(Date.now() + 600000),
+            totalQuestions: 1,
+          },
+        });
+        attemptIds.push(attempt.id);
+        await prisma.attemptAnswer.create({
+          data: {
+            attemptId: attempt.id,
+            questionId: q.id,
+            selectedOptionId: q.options[1].id,
+          },
+        });
+      }
+      if (status !== ExamStatus.DRAFT) await publish(id);
+      if (status === ExamStatus.CLOSED)
+        await call('put', `/exams/${id}/close`).expect(200);
+      await call('delete', `/exams/${id}`, stranger).expect(403);
+      await call('delete', `/exams/${id}`, student).expect(403);
+      await call('delete', `/exams/${id}`).expect(204);
+      expect(await prisma.exam.findUnique({ where: { id } })).toBeNull();
+      expect(await prisma.question.count({ where: { examId: id } })).toBe(0);
+      expect(await prisma.option.count({ where: { questionId: q.id } })).toBe(0);
+      expect(await prisma.attempt.count({ where: { examId: id } })).toBe(0);
+      expect(
+        await prisma.attemptAnswer.count({
+          where: { attemptId: { in: attemptIds } },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.attempt.findUnique({ where: { id: preservedAttempt.id } }),
+      ).toEqual(preservedAttempt);
+      expect(
+        await prisma.attemptAnswer.findUnique({
+          where: { id: preservedAnswer.id },
+        }),
+      ).toEqual(preservedAnswer);
+      expect(
+        await prisma.option.count({
+          where: { questionId: preservedQuestion.id },
+        }),
+      ).toBe(2);
+      expect(
+        await prisma.user.findUnique({ where: { id: student.id } }),
+      ).toEqual(studentBefore);
+    },
+  );
+
+  it('allows ADMIN to permanently delete another manager published exam', async () => {
+    const id = await draft();
+    await question(id);
+    await publish(id);
+    await call('delete', `/exams/${id}`, admin).expect(204);
+    expect(await prisma.exam.findUnique({ where: { id } })).toBeNull();
+  });
+
+  it('rolls back deletion when another exam attempt references its content', async () => {
     const id = await draft();
     const q = await question(id);
+    const otherId = await draft();
+    const otherQuestion = await question(otherId);
     const attempt = await prisma.attempt.create({
       data: {
-        examId: id,
+        examId: otherId,
         userId: student.id,
-        status: AttemptStatus.CANCELLED,
+        status: AttemptStatus.SUBMITTED,
         deadlineAt: new Date(),
         totalQuestions: 1,
       },
     });
+    const answer = await prisma.attemptAnswer.create({
+      data: {
+        attemptId: attempt.id,
+        questionId: otherQuestion.id,
+        selectedOptionId: q.options[1].id,
+      },
+    });
+    const before = await prisma.exam.findUniqueOrThrow({ where: { id } });
     await call('delete', `/exams/${id}`).expect(409);
-    expect(
-      await prisma.attempt.findUnique({ where: { id: attempt.id } }),
-    ).not.toBeNull();
+    expect(await prisma.exam.findUnique({ where: { id } })).toEqual(before);
     expect(await prisma.option.count({ where: { questionId: q.id } })).toBe(2);
+    expect(
+      await prisma.attemptAnswer.findUnique({ where: { id: answer.id } }),
+    ).toEqual(answer);
+  });
+
+  it('leaves no orphan attempts when deletion races with starting an exam', async () => {
+    const id = await draft();
+    const q = await question(id);
+    await publish(id);
+    const [deleted, started] = await Promise.all([
+      call('delete', `/exams/${id}`),
+      call('post', `/exams/${id}/attempts`, student),
+    ]);
+    expect(deleted.status).toBe(204);
+    expect([201, 404, 409]).toContain(started.status);
+    expect(await prisma.exam.findUnique({ where: { id } })).toBeNull();
+    expect(await prisma.attempt.count({ where: { examId: id } })).toBe(0);
+    expect(await prisma.question.count({ where: { examId: id } })).toBe(0);
+    expect(await prisma.option.count({ where: { questionId: q.id } })).toBe(0);
+  });
+
+  it('leaves no orphan answers when deletion races with saving an answer', async () => {
+    const id = await draft();
+    const q = await question(id);
+    await publish(id);
+    const started = await call('post', `/exams/${id}/attempts`, student).expect(
+      201,
+    );
+    const attemptId = started.body.attempt.id as string;
+    const [deleted, saved] = await Promise.all([
+      call('delete', `/exams/${id}`),
+      call('put', `/attempts/${attemptId}/answers/${q.id}`, student).send({
+        selectedOptionIndex: 1,
+      }),
+    ]);
+    expect(deleted.status).toBe(204);
+    expect([200, 404, 409]).toContain(saved.status);
+    expect(await prisma.attempt.count({ where: { examId: id } })).toBe(0);
+    expect(
+      await prisma.attemptAnswer.count({ where: { attemptId } }),
+    ).toBe(0);
+    expect(await prisma.option.count({ where: { questionId: q.id } })).toBe(0);
   });
 
   it('rejects publishing persisted invalid answer keys', async () => {

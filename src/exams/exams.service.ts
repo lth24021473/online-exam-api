@@ -82,8 +82,6 @@ export class ExamsService {
   async remove(id: string, managerId: string, role: Role) {
     const exam = await this.findOneOrFail(id);
     this.assertOwner(exam, managerId, role);
-    if (exam.status !== ExamStatus.DRAFT)
-      throw new BadRequestException('Only DRAFT exams can be deleted');
     await this.examsRepository.delete(id);
   }
 

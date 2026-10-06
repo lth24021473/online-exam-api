@@ -125,10 +125,12 @@ export class ExamsController {
   @Delete(':id')
   @Roles(Role.EXAM_MANAGER, Role.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: '[EXAM_MANAGER/ADMIN] Delete a DRAFT exam' })
-  @ApiNoContentResponse({ description: 'Exam deleted' })
+  @ApiOperation({ summary: '[EXAM_MANAGER/ADMIN] Permanently delete an exam' })
+  @ApiNoContentResponse({
+    description: 'Exam, questions, options, attempts and answers deleted',
+  })
   @ApiNotFoundResponse({ description: 'Exam not found' })
-  @ApiForbiddenResponse({ description: 'Not the owner or not DRAFT' })
+  @ApiForbiddenResponse({ description: 'Not the owner or insufficient role' })
   async remove(
     @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,

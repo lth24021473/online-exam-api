@@ -48,13 +48,16 @@ Luồng đầy đủ Controller → Service → Repository → Prisma → MongoD
 | --- | --- | --- |
 | `POST /exams` | Tạo đề DRAFT | EXAM_MANAGER, ADMIN |
 | `GET /exams`, `GET /exams/:id` | Danh sách/chi tiết theo quyền; STUDENT chỉ thấy đề mở và không thấy đáp án đúng | Đã đăng nhập |
-| `PATCH /exams/:id`, `DELETE /exams/:id` | Sửa/xóa bản nháp; xóa cả câu hỏi/lựa chọn, từ chối dữ liệu đã có bài làm | Chủ đề, ADMIN |
+| `PATCH /exams/:id` | Sửa thông tin bản nháp | Chủ đề, ADMIN |
+| `DELETE /exams/:id` | Xóa vĩnh viễn đề ở mọi trạng thái, cả câu hỏi/lựa chọn, lượt làm và đáp án | Chủ đề, ADMIN |
 | `PUT /exams/:id/publish`, `PUT /exams/:id/close` | Mở/đóng đề | Chủ đề, ADMIN |
 | `POST /exams/:id/questions` | Thêm câu hỏi và các lựa chọn | Chủ đề, ADMIN |
 | `PATCH /exams/:id/questions/:questionId`, `DELETE /exams/:id/questions/:questionId` | Sửa/xóa câu hỏi nháp | Chủ đề, ADMIN |
 | `GET /exams/:id/results` | Kết quả học sinh, lọc trạng thái, phân trang, thống kê toàn đề | Chủ đề, ADMIN |
 
 Nội dung đề/câu hỏi chỉ sửa khi DRAFT. Mở đề yêu cầu ít nhất một câu hỏi, mỗi câu ít nhất hai lựa chọn có nội dung và đúng một lựa chọn đúng. Khóa giao dịch ngăn sửa câu hỏi đồng thời với publish. Đóng đề ngăn lượt làm mới; học sinh đang làm vẫn được tiếp tục/lưu/nộp bài.
+
+Xóa vĩnh viễn áp dụng cho DRAFT/PUBLISHED/CLOSED, chỉ chủ đề hoặc ADMIN được thực hiện. Một giao dịch xóa đáp án, lượt làm, lựa chọn, câu hỏi và đề; kết quả/lịch sử của đề đó cũng bị xóa, không ảnh hưởng tài khoản hoặc đề khác. Khóa ghi trên đề/lượt làm và retry ngăn tạo dữ liệu mồ côi khi bắt đầu hoặc lưu bài đồng thời. Tham chiếu bất nhất từ bài làm của đề khác trả 409 và hoàn tác toàn bộ giao dịch.
 
 API results nhận `page` mặc định 1, `limit` mặc định 10 (tối đa 100), `status` tùy chọn IN_PROGRESS/SUBMITTED/CANCELLED; trả `{ exam, data, meta, summary }`. Điểm/số đúng/sai lấy từ dữ liệu backend đã chấm. Thống kê summary tính trên toàn đề, độc lập bộ lọc/trang; chưa có bài nộp thì điểm trung bình/cao nhất/thấp nhất là null. Bài hết giờ được chốt/chấm trước khi người quản lý xem kết quả. ID/query không hợp lệ trả 400; sai quyền hoặc không sở hữu đề trả 403.
 

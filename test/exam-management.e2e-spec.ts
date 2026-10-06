@@ -272,4 +272,56 @@ describe('Exam management HTTP validation and authorization', () => {
       expect.objectContaining({ manager: { connect: { id: MANAGER } } }),
     );
   });
+
+  it.each(Object.values(ExamStatus))(
+    'allows the owner to permanently delete a %s exam',
+    async (status) => {
+      exams.findById.mockResolvedValue({ ...exam(), status });
+      await request(app.getHttpServer())
+        .delete(`/api/v1/exams/${EXAM}`)
+        .auth(Role.EXAM_MANAGER, { type: 'bearer' })
+        .expect(204);
+      expect(exams.delete).toHaveBeenCalledWith(EXAM);
+    },
+  );
+  it('allows ADMIN to permanently delete another manager closed exam', async () => {
+    exams.findById.mockResolvedValue({
+      ...exam(),
+      status: ExamStatus.CLOSED,
+      managerId: OTHER,
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/v1/exams/${EXAM}`)
+      .auth(Role.ADMIN, { type: 'bearer' })
+      .expect(204);
+    expect(exams.delete).toHaveBeenCalledWith(EXAM);
+  });
+  it('rejects permanent deletion by another manager or a student', async () => {
+    exams.findById.mockResolvedValue({
+      ...exam(),
+      status: ExamStatus.CLOSED,
+      managerId: OTHER,
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/v1/exams/${EXAM}`)
+      .auth(Role.EXAM_MANAGER, { type: 'bearer' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .delete(`/api/v1/exams/${EXAM}`)
+      .auth(Role.STUDENT, { type: 'bearer' })
+      .expect(403);
+    expect(exams.delete).not.toHaveBeenCalled();
+  });
+  it('rejects invalid or missing exam IDs without deleting anything', async () => {
+    await request(app.getHttpServer())
+      .delete('/api/v1/exams/invalid')
+      .auth(Role.EXAM_MANAGER, { type: 'bearer' })
+      .expect(400);
+    exams.findById.mockResolvedValue(null);
+    await request(app.getHttpServer())
+      .delete(`/api/v1/exams/${EXAM}`)
+      .auth(Role.EXAM_MANAGER, { type: 'bearer' })
+      .expect(404);
+    expect(exams.delete).not.toHaveBeenCalled();
+  });
 });
