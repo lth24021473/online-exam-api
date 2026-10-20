@@ -33,17 +33,52 @@ model RevokedToken {
 }
 
 model User {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  role         Role     @default(STUDENT)
-  authVersion  Int?     @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  email            String   @unique
+  passwordHash     String
+  fullName         String
+  role             Role     @default(STUDENT)
+  avatar           String?
+  cover            String?
+  workplace        String?
+  currentResidence String?
+  authVersion      Int?     @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  exams    Exam[]
-  attempts Attempt[]
+  exams             Exam[]
+  attempts          Attempt[]
+  managedClassrooms Classroom[]       @relation("ManagerClassrooms")
+  classroomMembers  ClassroomMember[]
+}
+
+model Classroom {
+  id          String            @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  code        String            @unique
+  description String?
+  password    String
+  managerId   String            @db.ObjectId
+  manager     User              @relation("ManagerClassrooms", fields: [managerId], references: [id])
+  members     ClassroomMember[]
+  exams       Exam[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([managerId])
+}
+
+model ClassroomMember {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  classroomId String    @db.ObjectId
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id])
+  joinedAt    DateTime  @default(now())
+
+  @@unique([classroomId, userId])
+  @@index([userId])
+  @@index([classroomId])
 }
 
 model Exam {
@@ -55,15 +90,21 @@ model Exam {
   status          ExamStatus @default(DRAFT)
   publishedAt     DateTime?
   closedAt        DateTime?
+  opensAt         DateTime?
+  closesAt        DateTime?
+  maxAttempts     Int        @default(1)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   managerId       String     @db.ObjectId
   manager         User       @relation(fields: [managerId], references: [id])
   questions       Question[]
   attempts        Attempt[]
+  classroomId     String?    @db.ObjectId
+  classroom       Classroom? @relation(fields: [classroomId], references: [id])
 
   @@index([managerId])
   @@index([status])
+  @@index([classroomId])
 }
 
 model Question {
