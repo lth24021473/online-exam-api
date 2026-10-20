@@ -118,10 +118,16 @@ export class ClassroomsRepository {
       },
     });
 
-    return memberships.map((membership) => ({
-      ...membership.classroom,
-      joinedAt: membership.joinedAt,
-    }));
+    return memberships.map((membership) => {
+      const { password, ...classroomWithoutPassword } =
+        membership.classroom as typeof membership.classroom & {
+          password?: string;
+        };
+      return {
+        ...classroomWithoutPassword,
+        joinedAt: membership.joinedAt,
+      };
+    });
   }
 
   async findMember(classroomId: string, userId: string) {

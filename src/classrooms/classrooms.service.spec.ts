@@ -202,7 +202,8 @@ describe('ClassroomsService', () => {
       const result = await service.join(userId, dto);
 
       expect(repository.addMember).toHaveBeenCalledWith('class-1', userId);
-      expect(result).toEqual(classroom);
+      const { password, ...expectedClassroom } = classroom;
+      expect(result).toEqual(expectedClassroom);
     });
   });
 

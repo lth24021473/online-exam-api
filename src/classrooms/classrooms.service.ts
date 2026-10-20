@@ -81,7 +81,10 @@ export class ClassroomsService {
       userId,
     );
 
-    return membership?.classroom ?? classroom;
+    const joinedClassroom = membership?.classroom ?? classroom;
+    const { password, ...classroomWithoutPassword } =
+      joinedClassroom as typeof joinedClassroom & { password?: string };
+    return classroomWithoutPassword;
   }
 
   async findManaged(managerId: string) {

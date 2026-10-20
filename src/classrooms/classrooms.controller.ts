@@ -26,6 +26,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 import { ClassroomsService } from './classrooms.service';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
 import { JoinClassroomDto } from './dto/join-classroom.dto';
@@ -70,8 +71,12 @@ export class ClassroomsController {
   @Roles(Role.STUDENT, Role.EXAM_MANAGER, Role.ADMIN)
   @ApiOperation({ summary: 'Danh sách lớp học đã tham gia' })
   @ApiOkResponse({ description: 'Danh sách các lớp học người dùng đã tham gia' })
-  findJoined(@Req() req: AuthenticatedRequest) {
-    return this.classroomsService.findJoined(req.user.id);
+  async findJoined(@Req() req: AuthenticatedRequest) {
+    const classrooms = await this.classroomsService.findJoined(req.user.id);
+    return classrooms.map((classroom: any) => {
+      const { password, ...classroomWithoutPassword } = classroom;
+      return classroomWithoutPassword;
+    });
   }
 
   @Post('join')
@@ -81,8 +86,10 @@ export class ClassroomsController {
   @ApiOkResponse({ description: 'Tham gia lớp học thành công' })
   @ApiNotFoundResponse({ description: 'Mã lớp không tồn tại' })
   @ApiConflictResponse({ description: 'Đã tham gia lớp học từ trước' })
-  join(@Req() req: AuthenticatedRequest, @Body() dto: JoinClassroomDto) {
-    return this.classroomsService.join(req.user.id, dto);
+  async join(@Req() req: AuthenticatedRequest, @Body() dto: JoinClassroomDto) {
+    const classroom = await this.classroomsService.join(req.user.id, dto);
+    const { password, ...classroomWithoutPassword } = classroom as any;
+    return classroomWithoutPassword;
   }
 
   @Get(':id')
@@ -94,7 +101,7 @@ export class ClassroomsController {
     description: 'Chỉ giáo viên quản lý hoặc thành viên mới có quyền xem',
   })
   async findOne(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
     const classroom = await this.classroomsService.assertAccess(
@@ -104,7 +111,9 @@ export class ClassroomsController {
     );
 
     const result = { ...classroom };
-    if (req.user.role === Role.STUDENT) {
+    const isOwnerOrAdmin =
+      req.user.role === Role.ADMIN || classroom.managerId === req.user.id;
+    if (!isOwnerOrAdmin) {
       delete (result as any).password;
     }
     return result;
@@ -117,7 +126,7 @@ export class ClassroomsController {
   @ApiNotFoundResponse({ description: 'Lớp học không tồn tại' })
   @ApiForbiddenResponse({ description: 'Không có quyền truy cập' })
   async findMembers(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
     await this.classroomsService.assertAccess(
@@ -137,8 +146,8 @@ export class ClassroomsController {
   @ApiNotFoundResponse({ description: 'Lớp học không tồn tại' })
   @ApiForbiddenResponse({ description: 'Bạn không quản lý lớp học này' })
   async removeMember(
-    @Param('id') id: string,
-    @Param('userId') memberUserId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Param('userId', ParseObjectIdPipe) memberUserId: string,
     @Req() req: AuthenticatedRequest,
   ) {
     return this.classroomsService.removeMember(
@@ -159,7 +168,7 @@ export class ClassroomsController {
     description: 'Không thể xóa lớp đã có đề thi hoặc bài làm',
   })
   async deleteClassroom(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
     return this.classroomsService.deleteClassroom(
@@ -176,7 +185,7 @@ export class ClassroomsController {
   @ApiNotFoundResponse({ description: 'Lớp học không tồn tại' })
   @ApiForbiddenResponse({ description: 'Không có quyền truy cập' })
   async findExams(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
     await this.classroomsService.assertAccess(

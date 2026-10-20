@@ -6,6 +6,7 @@ import { ExamsService } from '../exams/exams.service';
 import { ExamsRepository } from '../exams/exams.repository';
 import { AttemptsService } from '../attempts/attempts.service';
 import { AttemptsRepository } from '../attempts/attempts.repository';
+import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 
 describe('Classrooms & Exam Scope Isolation', () => {
   describe('Exam Scope Filtering in ExamsRepository / ExamsService', () => {
@@ -250,44 +251,116 @@ describe('Classrooms & Exam Scope Isolation', () => {
 
     it('strips password when student calls GET /classrooms/:id', async () => {
       mockClassroomsService.assertAccess!.mockResolvedValue({
-        id: 'class-1',
+        id: '507f1f77bcf86cd799439011',
         name: 'Lop 10A1',
         code: 'ABC234',
         password: 'secret_password_123',
-        managerId: 'mgr-1',
+        managerId: '507f1f77bcf86cd799439012',
       } as any);
 
       const req = {
-        user: { id: 'student-1', role: Role.STUDENT },
+        user: { id: '507f1f77bcf86cd799439013', role: Role.STUDENT },
       } as any;
 
-      const result = await controller.findOne('class-1', req);
+      const result = await controller.findOne('507f1f77bcf86cd799439011', req);
 
       expect(mockClassroomsService.assertAccess).toHaveBeenCalledWith(
-        'class-1',
-        'student-1',
+        '507f1f77bcf86cd799439011',
+        '507f1f77bcf86cd799439013',
         Role.STUDENT,
       );
       expect(result.password).toBeUndefined();
       expect(result.name).toBe('Lop 10A1');
     });
 
-    it('retains password when manager calls GET /classrooms/:id', async () => {
+    it('retains password when owner manager calls GET /classrooms/:id', async () => {
       mockClassroomsService.assertAccess!.mockResolvedValue({
-        id: 'class-1',
+        id: '507f1f77bcf86cd799439011',
         name: 'Lop 10A1',
         code: 'ABC234',
         password: 'secret_password_123',
-        managerId: 'mgr-1',
+        managerId: '507f1f77bcf86cd799439012',
       } as any);
 
       const req = {
-        user: { id: 'mgr-1', role: Role.EXAM_MANAGER },
+        user: { id: '507f1f77bcf86cd799439012', role: Role.EXAM_MANAGER },
       } as any;
 
-      const result = await controller.findOne('class-1', req);
+      const result = await controller.findOne('507f1f77bcf86cd799439011', req);
 
       expect(result.password).toBe('secret_password_123');
+    });
+
+    it('strips password when non-owner manager calls GET /classrooms/:id', async () => {
+      mockClassroomsService.assertAccess!.mockResolvedValue({
+        id: '507f1f77bcf86cd799439011',
+        name: 'Lop 10A1',
+        code: 'ABC234',
+        password: 'secret_password_123',
+        managerId: '507f1f77bcf86cd799439012',
+      } as any);
+
+      const req = {
+        user: { id: '507f1f77bcf86cd799439099', role: Role.EXAM_MANAGER },
+      } as any;
+
+      const result = await controller.findOne('507f1f77bcf86cd799439011', req);
+
+      expect(result.password).toBeUndefined();
+    });
+
+    it('retains password when admin calls GET /classrooms/:id', async () => {
+      mockClassroomsService.assertAccess!.mockResolvedValue({
+        id: '507f1f77bcf86cd799439011',
+        name: 'Lop 10A1',
+        code: 'ABC234',
+        password: 'secret_password_123',
+        managerId: '507f1f77bcf86cd799439012',
+      } as any);
+
+      const req = {
+        user: { id: '507f1f77bcf86cd799439088', role: Role.ADMIN },
+      } as any;
+
+      const result = await controller.findOne('507f1f77bcf86cd799439011', req);
+
+      expect(result.password).toBe('secret_password_123');
+    });
+
+    it('strips password from all classrooms in GET /classrooms/joined', async () => {
+      mockClassroomsService.findJoined!.mockResolvedValue([
+        {
+          id: '507f1f77bcf86cd799439011',
+          name: 'Lop 10A1',
+          password: 'leaked_password',
+        },
+      ] as any);
+
+      const req = {
+        user: { id: '507f1f77bcf86cd799439013', role: Role.STUDENT },
+      } as any;
+
+      const result = await controller.findJoined(req);
+
+      expect(result[0].password).toBeUndefined();
+      expect(result[0].name).toBe('Lop 10A1');
+    });
+
+    it('strips password from returned classroom on POST /classrooms/join', async () => {
+      mockClassroomsService.join!.mockResolvedValue({
+        id: '507f1f77bcf86cd799439011',
+        name: 'Lop 10A1',
+        password: 'leaked_password',
+      } as any);
+
+      const req = {
+        user: { id: '507f1f77bcf86cd799439013', role: Role.STUDENT },
+      } as any;
+
+      const result = await controller.join(req, { code: 'ABC234', password: '123' });
+
+      expect(result.password).toBeUndefined();
+      expect(result.name).toBe('Lop 10A1');
     });
 
     it('blocks non-member when accessing classroom detail', async () => {
@@ -296,74 +369,84 @@ describe('Classrooms & Exam Scope Isolation', () => {
       );
 
       const req = {
-        user: { id: 'stranger-user', role: Role.STUDENT },
+        user: { id: '507f1f77bcf86cd799439099', role: Role.STUDENT },
       } as any;
 
-      await expect(controller.findOne('class-1', req)).rejects.toThrow(
+      await expect(controller.findOne('507f1f77bcf86cd799439011', req)).rejects.toThrow(
         ForbiddenException,
       );
     });
 
     it('delegates findExams to examsService.findByClassroom after access assertion', async () => {
       mockClassroomsService.assertAccess!.mockResolvedValue({
-        id: 'class-1',
-        managerId: 'mgr-1',
+        id: '507f1f77bcf86cd799439011',
+        managerId: '507f1f77bcf86cd799439012',
       } as any);
       mockExamsService.findByClassroom!.mockResolvedValue([
-        { id: 'exam-1', title: 'Math 1' },
+        { id: '507f1f77bcf86cd799439015', title: 'Math 1' },
       ] as any);
 
       const req = {
-        user: { id: 'student-member', role: Role.STUDENT },
+        user: { id: '507f1f77bcf86cd799439013', role: Role.STUDENT },
       } as any;
 
-      const exams = await controller.findExams('class-1', req);
+      const exams = await controller.findExams('507f1f77bcf86cd799439011', req);
 
       expect(mockClassroomsService.assertAccess).toHaveBeenCalledWith(
-        'class-1',
-        'student-member',
+        '507f1f77bcf86cd799439011',
+        '507f1f77bcf86cd799439013',
         Role.STUDENT,
       );
       expect(mockExamsService.findByClassroom).toHaveBeenCalledWith(
-        'class-1',
+        '507f1f77bcf86cd799439011',
         Role.STUDENT,
       );
-      expect(exams).toEqual([{ id: 'exam-1', title: 'Math 1' }]);
+      expect(exams).toEqual([{ id: '507f1f77bcf86cd799439015', title: 'Math 1' }]);
     });
 
     it('delegates removeMember to classroomsService.removeMember', async () => {
       mockClassroomsService.removeMember!.mockResolvedValue({ count: 1 } as any);
 
       const req = {
-        user: { id: 'mgr-1', role: Role.EXAM_MANAGER },
+        user: { id: '507f1f77bcf86cd799439012', role: Role.EXAM_MANAGER },
       } as any;
 
-      const result = await controller.removeMember('class-1', 'student-2', req);
+      const result = await controller.removeMember(
+        '507f1f77bcf86cd799439011',
+        '507f1f77bcf86cd799439013',
+        req,
+      );
 
       expect(mockClassroomsService.removeMember).toHaveBeenCalledWith(
-        'class-1',
-        'student-2',
-        'mgr-1',
+        '507f1f77bcf86cd799439011',
+        '507f1f77bcf86cd799439013',
+        '507f1f77bcf86cd799439012',
         Role.EXAM_MANAGER,
       );
       expect(result).toEqual({ count: 1 });
     });
 
     it('delegates deleteClassroom to classroomsService.deleteClassroom', async () => {
-      mockClassroomsService.deleteClassroom!.mockResolvedValue({ id: 'class-1' } as any);
+      mockClassroomsService.deleteClassroom!.mockResolvedValue({ id: '507f1f77bcf86cd799439011' } as any);
 
       const req = {
-        user: { id: 'mgr-1', role: Role.EXAM_MANAGER },
+        user: { id: '507f1f77bcf86cd799439012', role: Role.EXAM_MANAGER },
       } as any;
 
-      const result = await controller.deleteClassroom('class-1', req);
+      const result = await controller.deleteClassroom('507f1f77bcf86cd799439011', req);
 
       expect(mockClassroomsService.deleteClassroom).toHaveBeenCalledWith(
-        'class-1',
-        'mgr-1',
+        '507f1f77bcf86cd799439011',
+        '507f1f77bcf86cd799439012',
         Role.EXAM_MANAGER,
       );
-      expect(result).toEqual({ id: 'class-1' });
+      expect(result).toEqual({ id: '507f1f77bcf86cd799439011' });
+    });
+
+    it('validates ObjectIds with ParseObjectIdPipe', () => {
+      const pipe = new ParseObjectIdPipe();
+      expect(pipe.transform('507f1f77bcf86cd799439011')).toBe('507f1f77bcf86cd799439011');
+      expect(() => pipe.transform('invalid-id')).toThrow();
     });
   });
 });
