@@ -33,4 +33,29 @@ export class CreateExamDto {
   @IsInt()
   @Min(1)
   durationMinutes: number;
+
+  @ApiPropertyOptional({ example: '2026-10-20T08:00:00.000Z' })
+  @IsOptional()
+  opensAt?: string | null;
+
+  @ApiPropertyOptional({ example: '2026-10-20T17:00:00.000Z' })
+  @IsOptional()
+  closesAt?: string | null;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxAttempts?: number;
+
+  @ApiPropertyOptional({
+    example: '507f1f77bcf86cd799439011',
+    description: 'Classroom ID if the exam belongs to a class',
+  })
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() ? value.trim() : value === '' ? undefined : value,
+  )
+  @IsOptional()
+  @IsString()
+  classroomId?: string;
 }

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AttemptStatus, ExamStatus, Prisma } from '@prisma/client';
+import { AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ExamResultsQueryDto } from './dto/exam-results-query.dto';
 import { lockExamStatus, retryExamWrite } from './exam-write-conflict';
@@ -29,8 +29,16 @@ export class ExamsRepository {
     });
   }
 
-  findAll() {
+  findAll(role?: Role) {
+    const where: Prisma.ExamWhereInput = {};
+    if (role === Role.STUDENT) {
+      where.status = ExamStatus.PUBLISHED;
+      where.OR = [{ classroomId: null }, { classroomId: { isSet: false } }];
+    } else if (role === Role.EXAM_MANAGER) {
+      where.OR = [{ classroomId: null }, { classroomId: { isSet: false } }];
+    }
     return this.prisma.exam.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { questions: true, attempts: true } } },
     });
@@ -38,7 +46,10 @@ export class ExamsRepository {
 
   findManyByManager(managerId: string) {
     return this.prisma.exam.findMany({
-      where: { managerId },
+      where: {
+        managerId,
+        OR: [{ classroomId: null }, { classroomId: { isSet: false } }],
+      },
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { questions: true, attempts: true } } },
     });
@@ -46,17 +57,78 @@ export class ExamsRepository {
 
   findManyPublished() {
     return this.prisma.exam.findMany({
-      where: { status: ExamStatus.PUBLISHED },
+      where: {
+        status: ExamStatus.PUBLISHED,
+        OR: [{ classroomId: null }, { classroomId: { isSet: false } }],
+      },
       orderBy: { publishedAt: 'desc' },
       include: { _count: { select: { questions: true } } },
     });
   }
 
-  update(id: string, data: Prisma.ExamUpdateInput) {
+  findByClassroom(classroomId: string, userRole?: Role) {
+    const where: Prisma.ExamWhereInput = {
+      classroomId,
+      ...(userRole === Role.STUDENT ? { status: ExamStatus.PUBLISHED } : {}),
+    };
+    return this.prisma.exam.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: {
+            questions: true,
+            attempts: true,
+          },
+        },
+      },
+    });
+  }
+
+  async findClassroomById(id: string) {
+    return this.prisma.classroom.findUnique({
+      where: { id },
+    });
+  }
+
+  async isClassroomMember(classroomId: string, userId: string): Promise<boolean> {
+    const member = await this.prisma.classroomMember.findUnique({
+      where: {
+        classroomId_userId: {
+          classroomId,
+          userId,
+        },
+      },
+    });
+    return !!member;
+  }
+
+  update(id: string, data: Prisma.ExamUpdateInput, expectedStatus?: ExamStatus) {
     return retryExamWrite(() =>
       this.prisma.$transaction(async (tx) => {
-        await lockExamStatus(tx, id, ExamStatus.DRAFT);
+        if (expectedStatus) {
+          await lockExamStatus(tx, id, expectedStatus);
+        }
         return tx.exam.update({ where: { id }, data });
+      }),
+    );
+  }
+
+  reopen(id: string, closesAt?: Date | null) {
+    return retryExamWrite(() =>
+      this.prisma.$transaction(async (tx) => {
+        await lockExamStatus(tx, id, ExamStatus.CLOSED);
+        const data: Prisma.ExamUpdateInput = {
+          status: ExamStatus.PUBLISHED,
+          closedAt: null,
+        };
+        if (closesAt !== undefined) {
+          data.closesAt = closesAt;
+        }
+        return tx.exam.update({
+          where: { id },
+          data,
+        });
       }),
     );
   }
@@ -193,8 +265,95 @@ export class ExamsRepository {
       });
       const count = (status: AttemptStatus) =>
         counts.find((row) => row.status === status)?._count._all ?? 0;
+
+      const submittedForLeaderboard = await tx.attempt.findMany({
+        where: { examId, status: AttemptStatus.SUBMITTED, score: { not: null } },
+        select: {
+          id: true,
+          userId: true,
+          score: true,
+          startedAt: true,
+          submittedAt: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              fullName: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+
+      const bestByUser = new Map<
+        string,
+        {
+          userId: string;
+          fullName: string;
+          email: string;
+          avatar: string | null;
+          bestScore: number;
+          attemptId: string;
+          durationSeconds: number;
+          submittedAt: Date | null;
+        }
+      >();
+
+      for (const att of submittedForLeaderboard) {
+        const score = att.score ?? 0;
+        const durationSeconds =
+          att.submittedAt && att.startedAt
+            ? Math.max(
+                0,
+                Math.floor(
+                  (att.submittedAt.getTime() - att.startedAt.getTime()) / 1000,
+                ),
+              )
+            : 0;
+        const current = bestByUser.get(att.userId);
+        if (!current) {
+          bestByUser.set(att.userId, {
+            userId: att.userId,
+            fullName: att.user.fullName,
+            email: att.user.email,
+            avatar: att.user.avatar,
+            bestScore: score,
+            attemptId: att.id,
+            durationSeconds,
+            submittedAt: att.submittedAt,
+          });
+        } else if (
+          score > current.bestScore ||
+          (score === current.bestScore &&
+            durationSeconds < current.durationSeconds)
+        ) {
+          bestByUser.set(att.userId, {
+            userId: att.userId,
+            fullName: att.user.fullName,
+            email: att.user.email,
+            avatar: att.user.avatar,
+            bestScore: score,
+            attemptId: att.id,
+            durationSeconds,
+            submittedAt: att.submittedAt,
+          });
+        }
+      }
+
+      const leaderboard = Array.from(bestByUser.values())
+        .sort(
+          (a, b) =>
+            b.bestScore - a.bestScore ||
+            a.durationSeconds - b.durationSeconds,
+        )
+        .map((entry, index) => ({
+          rank: index + 1,
+          ...entry,
+        }));
+
       return {
         data,
+        leaderboard,
         meta: {
           page: query.page,
           limit: query.limit,

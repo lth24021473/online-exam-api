@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AttemptStatus, ExamStatus, Prisma } from '@prisma/client';
+import { AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { lockExamStatus } from '../exams/exam-write-conflict';
 
@@ -63,8 +63,39 @@ export class AttemptsRepository {
         instructions: true,
         durationMinutes: true,
         status: true,
+        opensAt: true,
+        closesAt: true,
+        maxAttempts: true,
+        managerId: true,
+        classroomId: true,
         _count: { select: { questions: true } },
       },
+    });
+  }
+
+  async isClassroomMember(classroomId: string, userId: string): Promise<boolean> {
+    const member = await this.prisma.classroomMember.findUnique({
+      where: {
+        classroomId_userId: {
+          classroomId,
+          userId,
+        },
+      },
+    });
+    return !!member;
+  }
+
+  async isUserAdmin(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role === Role.ADMIN;
+  }
+
+  countSubmitted(userId: string, examId: string) {
+    return this.prisma.attempt.count({
+      where: { userId, examId, status: AttemptStatus.SUBMITTED },
     });
   }
 

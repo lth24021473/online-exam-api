@@ -4,10 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ExamStatus, Role } from '@prisma/client';
+import { ExamStatus, Prisma, Role } from '@prisma/client';
 import { ExamsRepository } from './exams.repository';
 import { CreateExamDto } from './dto/create-exam.dto';
 import { UpdateExamDto } from './dto/update-exam.dto';
+import { ReopenExamDto } from './dto/reopen-exam.dto';
 import { ExamResultsQueryDto } from './dto/exam-results-query.dto';
 import { AttemptsService } from '../attempts/attempts.service';
 
@@ -17,6 +18,13 @@ export class ExamsService {
     private readonly examsRepository: ExamsRepository,
     private readonly attemptsService: AttemptsService,
   ) {}
+
+  async getExamById(id: string, userId?: string, role?: Role) {
+    if (userId && role) {
+      return this.findOne(id, userId, role);
+    }
+    return this.findOneOrFail(id);
+  }
 
   async findOneOrFail(id: string) {
     const exam = await this.examsRepository.findById(id);
@@ -30,13 +38,31 @@ export class ExamsService {
       throw new ForbiddenException('You do not own this exam');
   }
 
-  async create(managerId: string, dto: CreateExamDto) {
+  async create(managerId: string, dto: CreateExamDto, role?: Role) {
+    if (dto.classroomId) {
+      const classroom = await this.examsRepository.findClassroomById(
+        dto.classroomId,
+      );
+      if (!classroom) {
+        throw new NotFoundException('Lớp học không tồn tại');
+      }
+      if (role !== Role.ADMIN && classroom.managerId !== managerId) {
+        throw new ForbiddenException('Bạn không quản lý lớp học này');
+      }
+    }
+
     return this.examsRepository.create({
       title: dto.title,
       description: dto.description,
       instructions: dto.instructions,
       durationMinutes: dto.durationMinutes,
+      maxAttempts: dto.maxAttempts ?? 1,
+      opensAt: dto.opensAt ? new Date(dto.opensAt) : null,
+      closesAt: dto.closesAt ? new Date(dto.closesAt) : null,
       manager: { connect: { id: managerId } },
+      ...(dto.classroomId
+        ? { classroom: { connect: { id: dto.classroomId } } }
+        : {}),
     });
   }
 
@@ -47,8 +73,27 @@ export class ExamsService {
     return this.examsRepository.findManyPublished();
   }
 
+  async findByClassroom(classroomId: string, userRole: Role) {
+    return this.examsRepository.findByClassroom(classroomId, userRole);
+  }
+
   async findOne(id: string, userId: string, role: Role) {
     const exam = await this.findOneOrFail(id);
+
+    if (exam.classroomId) {
+      const isOwner = exam.managerId === userId;
+      const isAdmin = role === Role.ADMIN;
+      const isMember = await this.examsRepository.isClassroomMember(
+        exam.classroomId,
+        userId,
+      );
+      if (!isOwner && !isAdmin && !isMember) {
+        throw new ForbiddenException(
+          'Đề thi này chỉ dành cho học sinh trong lớp',
+        );
+      }
+    }
+
     if (role === Role.ADMIN) return exam;
     if (role === Role.EXAM_MANAGER) {
       this.assertOwner(exam, userId, role);
@@ -74,9 +119,19 @@ export class ExamsService {
   async update(id: string, managerId: string, dto: UpdateExamDto, role: Role) {
     const exam = await this.findOneOrFail(id);
     this.assertOwner(exam, managerId, role);
-    if (exam.status !== ExamStatus.DRAFT)
-      throw new BadRequestException('Only DRAFT exams can be modified');
-    return this.examsRepository.update(id, dto);
+    const updateData: Prisma.ExamUpdateInput = {};
+    if (dto.title !== undefined) updateData.title = dto.title;
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.instructions !== undefined) updateData.instructions = dto.instructions;
+    if (dto.maxAttempts !== undefined) updateData.maxAttempts = dto.maxAttempts;
+    if (dto.opensAt !== undefined) updateData.opensAt = dto.opensAt ? new Date(dto.opensAt) : null;
+    if (dto.closesAt !== undefined) updateData.closesAt = dto.closesAt ? new Date(dto.closesAt) : null;
+
+    if (exam.status === ExamStatus.DRAFT) {
+      if (dto.durationMinutes !== undefined) updateData.durationMinutes = dto.durationMinutes;
+      return this.examsRepository.update(id, updateData, ExamStatus.DRAFT);
+    }
+    return this.examsRepository.update(id, updateData, exam.status);
   }
 
   async remove(id: string, managerId: string, role: Role) {
@@ -116,6 +171,20 @@ export class ExamsService {
     if (exam.status !== ExamStatus.PUBLISHED)
       throw new BadRequestException('Only PUBLISHED exams can be closed');
     return this.examsRepository.close(id);
+  }
+
+  async reopen(
+    id: string,
+    managerId: string,
+    role: Role,
+    dto?: ReopenExamDto,
+  ) {
+    const exam = await this.findOneOrFail(id);
+    this.assertOwner(exam, managerId, role);
+    if (exam.status !== ExamStatus.CLOSED)
+      throw new BadRequestException('Only CLOSED exams can be reopened');
+    const closesAt = dto?.closesAt ? new Date(dto.closesAt) : undefined;
+    return this.examsRepository.reopen(id, closesAt);
   }
 
   async results(

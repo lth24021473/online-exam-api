@@ -37,6 +37,26 @@ export class UsersService {
     return this.usersRepository.updateRole(id, role);
   }
 
+  async updateProfile(
+    id: string,
+    dto: {
+      fullName?: string;
+      avatar?: string | null;
+      cover?: string | null;
+      workplace?: string | null;
+      currentResidence?: string | null;
+    },
+  ) {
+    await this.findPublicUserOrFail(id);
+    const updated = await this.usersRepository.updateProfile(id, dto);
+    const {
+      passwordHash: _passwordHash,
+      authVersion: _authVersion,
+      ...publicUser
+    } = updated;
+    return publicUser;
+  }
+
   async remove(id: string) {
     await this.findPublicUserOrFail(id);
     await this.usersRepository.deleteById(id);

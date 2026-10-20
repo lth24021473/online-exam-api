@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { ClassroomsRepository } from './classrooms.repository';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
 import { JoinClassroomDto } from './dto/join-classroom.dto';
@@ -99,6 +100,25 @@ export class ClassroomsService {
     return classroom;
   }
 
+  async assertAccess(classroomId: string, userId: string, role: Role) {
+    const classroom = await this.findById(classroomId);
+
+    if (role === Role.ADMIN || classroom.managerId === userId) {
+      return classroom;
+    }
+
+    const member = await this.classroomsRepository.findMember(
+      classroomId,
+      userId,
+    );
+
+    if (!member) {
+      throw new ForbiddenException('Bạn không có quyền truy cập lớp học này');
+    }
+
+    return classroom;
+  }
+
   async findMembers(classroomId: string) {
     await this.findById(classroomId);
     return this.classroomsRepository.findMembers(classroomId);
@@ -108,20 +128,21 @@ export class ClassroomsService {
     classroomId: string,
     memberUserId: string,
     managerId: string,
+    role?: Role,
   ) {
     const classroom = await this.findById(classroomId);
 
-    if (classroom.managerId !== managerId) {
+    if (role !== Role.ADMIN && classroom.managerId !== managerId) {
       throw new ForbiddenException('Bạn không có quyền quản lý lớp học này');
     }
 
     return this.classroomsRepository.removeMember(classroomId, memberUserId);
   }
 
-  async deleteClassroom(classroomId: string, managerId: string) {
+  async deleteClassroom(classroomId: string, managerId: string, role?: Role) {
     const classroom = await this.findById(classroomId);
 
-    if (classroom.managerId !== managerId) {
+    if (role !== Role.ADMIN && classroom.managerId !== managerId) {
       throw new ForbiddenException('Bạn không có quyền quản lý lớp học này');
     }
 
