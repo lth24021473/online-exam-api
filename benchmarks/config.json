@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "phase": "phase1",
+  "workload": "authenticated-mixed-read-v1",
+  "nodeVersion": "24.12.0",
+  "k6Version": "1.6.1",
+  "virtualUsers": 10,
+  "duration": "60s",
+  "warmupDuration": "10s",
+  "dataset": {
+    "version": 1,
+    "seed": "phase1-v1",
+    "students": 10,
+    "exams": 1,
+    "questionsPerExam": 20,
+    "optionsPerQuestion": 4,
+    "submittedAttemptsPerStudent": 1
+  }
+}

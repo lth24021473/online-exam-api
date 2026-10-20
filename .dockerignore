@@ -12,3 +12,7 @@ npm-debug.log
 *.tsbuildinfo
 coverage
 .local
+benchmarks/.tools
+benchmarks/.generated
+benchmarks/results
+benchmarks/__pycache__

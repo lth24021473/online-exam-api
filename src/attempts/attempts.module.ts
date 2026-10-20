@@ -10,5 +10,6 @@ import { AttemptsService } from './attempts.service';
   imports: [PrismaModule, AuthModule],
   controllers: [AttemptsController],
   providers: [AttemptsService, AttemptsRepository],
+  exports: [AttemptsService],
 })
 export class AttemptsModule {}

@@ -1,0 +1,73 @@
+{
+  "platform": "linux",
+  "machine": "x86_64",
+  "pythonVersion": "3.13.15",
+  "osRelease": {
+    "NAME": "Ubuntu",
+    "ID": "ubuntu",
+    "PRETTY_NAME": "Ubuntu 24.04.5 LTS",
+    "VERSION_ID": "24.04",
+    "VERSION": "24.04.5 LTS (Noble Numbat)",
+    "VERSION_CODENAME": "noble",
+    "ID_LIKE": "debian",
+    "HOME_URL": "https://www.ubuntu.com/",
+    "SUPPORT_URL": "https://help.ubuntu.com/",
+    "BUG_REPORT_URL": "https://bugs.launchpad.net/ubuntu/",
+    "PRIVACY_POLICY_URL": "https://www.ubuntu.com/legal/terms-and-policies/privacy-policy",
+    "UBUNTU_CODENAME": "noble",
+    "LOGO": "ubuntu-logo"
+  },
+  "cpuCount": 4,
+  "accelerator": "none",
+  "kaggleVerified": true,
+  "kaggleEnvironmentKeys": [
+    "KAGGLE_API_V1_TOKEN",
+    "KAGGLE_CONTAINER_NAME",
+    "KAGGLE_DATA_PROXY_PROJECT",
+    "KAGGLE_DATA_PROXY_TOKEN",
+    "KAGGLE_DATA_PROXY_URL",
+    "KAGGLE_DISABLE_GOOGLE_GENERATIVE_AI_INTEGRATION",
+    "KAGGLE_DOCKER_IMAGE",
+    "KAGGLE_GCP_ZONE",
+    "KAGGLE_GRPC_DATA_PROXY_URL",
+    "KAGGLE_KERNEL_INTEGRATIONS",
+    "KAGGLE_KERNEL_RUN_TYPE",
+    "KAGGLE_URL_BASE",
+    "KAGGLE_USER_SECRETS_TOKEN"
+  ],
+  "acceleratorEvidence": {
+    "gpuProbe": "nvidia-smi unavailable",
+    "gpuDeviceNodes": 0,
+    "tpuEnvironmentDetected": false
+  },
+  "nodeVersion": "v24.12.0",
+  "k6Version": "k6 v1.6.1 (commit/2ac2bb560e, go1.25.7, linux/amd64)",
+  "mongoVersion": "8.0.30",
+  "sourceArchiveSha256": "e063cfffa1c60c8894ae0e3d01128709670e9ba6b633233110066a4b30a966e7",
+  "sourceProvenance": {
+    "gitCommit": "e26dbb0103c7ca14c6ffeaa4fc62399396d51c0c",
+    "gitDirty": false,
+    "sourceTree": "sha256:9837d9d18d9cdce2b97fe2efd1a614d31c41a4d0616e402a6f8d2ced4e9fc5c7",
+    "workloadSha256": "7a0dfd71d8cdbe034bb60bc6b01c7ea2386e8182d58a4404377ec4b37bde175e"
+  },
+  "downloads": {
+    "node": {
+      "url": "https://nodejs.org/dist/v24.12.0/node-v24.12.0-linux-x64.tar.xz",
+      "sha256": "bdebee276e58d0ef5448f3d5ac12c67daa963dd5e0a9bb621a53d1cefbc852fd"
+    },
+    "mongo": {
+      "url": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-8.0.30.tgz",
+      "sha256": "bf8e0c3bb277d04c47b1d7aad15a47e4b7e0c660e3cce976ed64054abc88cbea"
+    },
+    "k6": {
+      "url": "https://github.com/grafana/k6/releases/download/v1.6.1/k6-v1.6.1-linux-amd64.tar.gz",
+      "sha256": "68df4958a1b089dc6f70a234e07c7ec818922f83b261ca24f3abf79882b13343"
+    }
+  },
+  "mongoBindIp": "127.0.0.1",
+  "mongoPort": 27018,
+  "replicaSet": "rs0",
+  "databaseName": "online_exam_cdaeda90a89d_benchmark",
+  "status": "completed",
+  "ownedMongoStopped": true
+}

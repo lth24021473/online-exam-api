@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
@@ -20,6 +20,7 @@ describeMongo('Admin sessions with real MongoDB', () => {
   let passwordHash: string;
   const ownedUserIds: string[] = [];
   const ownedExamIds: string[] = [];
+  const ownedRevokedHashes: string[] = [];
   const password = 'AdminSessionTest123!';
   const api = '/api/v1';
 
@@ -88,8 +89,12 @@ describeMongo('Admin sessions with real MongoDB', () => {
   });
 
   afterEach(async () => {
+    await prisma.revokedToken.deleteMany({
+      where: { tokenHash: { in: ownedRevokedHashes } },
+    });
     await prisma.exam.deleteMany({ where: { id: { in: ownedExamIds } } });
     await prisma.user.deleteMany({ where: { id: { in: ownedUserIds } } });
+    ownedRevokedHashes.length = 0;
     ownedExamIds.length = 0;
     ownedUserIds.length = 0;
   });
@@ -97,6 +102,51 @@ describeMongo('Admin sessions with real MongoDB', () => {
   afterAll(async () => {
     if (app) await app.close();
     else if (prisma) await prisma.$disconnect();
+  });
+
+  it('registers a student and revokes only the current token when logging out', async () => {
+    const email = `auth-flow-${randomUUID()}@example.test`;
+    const registered = await request(app.getHttpServer())
+      .post(`${api}/auth/register`)
+      .send({
+        email: ` ${email.toUpperCase()} `,
+        fullName: ' Student Auth Integration ',
+        password,
+      })
+      .expect(201);
+    ownedUserIds.push(registered.body.user.id);
+    expect(registered.body.user).toMatchObject({
+      email,
+      fullName: 'Student Auth Integration',
+      role: Role.STUDENT,
+    });
+    expect(registered.body.user).not.toHaveProperty('passwordHash');
+    expect(registered.body.user).not.toHaveProperty('authVersion');
+    const stored = await prisma.user.findUniqueOrThrow({
+      where: { id: registered.body.user.id },
+    });
+    expect(stored.passwordHash).not.toBe(password);
+    expect(await bcrypt.compare(password, stored.passwordHash)).toBe(true);
+
+    const token = registered.body.accessToken as string;
+    const otherToken = await login(stored);
+    expect(otherToken).not.toBe(token);
+    await me(token).expect(200);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    ownedRevokedHashes.push(tokenHash);
+    await request(app.getHttpServer())
+      .post(`${api}/auth/logout`)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    const revoked = await prisma.revokedToken.findUniqueOrThrow({
+      where: { tokenHash },
+    });
+    expect(revoked.expiresAt.getTime()).toBe(
+      app.get(JwtService).decode(token).exp * 1000,
+    );
+    await me(token).expect(401);
+    await me(otherToken).expect(200);
+    await me(await login(stored)).expect(200);
   });
 
   it('invalidates every session on role change and never revives tokens after a role cycle', async () => {

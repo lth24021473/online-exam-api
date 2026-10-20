@@ -1,11 +1,26 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus,
-  Param, Patch, Post, Req, UseGuards,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse,
-  ApiNoContentResponse, ApiNotFoundResponse, ApiOkResponse,
-  ApiOperation, ApiTags, ApiUnauthorizedResponse,
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
@@ -15,11 +30,12 @@ import { Roles } from '../../auth/roles.decorator';
 import { QuestionsService } from './questions.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
+import { ParseObjectIdPipe } from '../../attempts/parse-object-id.pipe';
 
 @ApiTags('Questions')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.EXAM_MANAGER)
+@Roles(Role.EXAM_MANAGER, Role.ADMIN)
 @Controller('exams/:examId/questions')
 export class QuestionsController {
   constructor(private readonly questionsService: QuestionsService) {}
@@ -32,19 +48,27 @@ export class QuestionsController {
   @ApiForbiddenResponse({ description: 'Not the owner or exam is closed' })
   @ApiNotFoundResponse({ description: 'Exam not found' })
   create(
-    @Param('examId') examId: string,
+    @Param('examId', ParseObjectIdPipe) examId: string,
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateQuestionDto,
   ) {
-    return this.questionsService.create(examId, req.user.id, dto);
+    return this.questionsService.create(
+      examId,
+      req.user.id,
+      dto,
+      req.user.role,
+    );
   }
 
   @Get()
   @ApiOperation({ summary: '[EXAM_MANAGER] List all questions in an exam' })
   @ApiOkResponse({ description: 'Questions ordered by position' })
   @ApiNotFoundResponse({ description: 'Exam not found' })
-  findAll(@Param('examId') examId: string, @Req() req: AuthenticatedRequest) {
-    return this.questionsService.findAll(examId, req.user.id);
+  findAll(
+    @Param('examId', ParseObjectIdPipe) examId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.questionsService.findAll(examId, req.user.id, req.user.role);
   }
 
   @Get(':id')
@@ -52,11 +76,16 @@ export class QuestionsController {
   @ApiOkResponse({ description: 'Question detail' })
   @ApiNotFoundResponse({ description: 'Exam or question not found' })
   findOne(
-    @Param('examId') examId: string,
-    @Param('id') id: string,
+    @Param('examId', ParseObjectIdPipe) examId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.questionsService.findOne(examId, id, req.user.id);
+    return this.questionsService.findOne(
+      examId,
+      id,
+      req.user.id,
+      req.user.role,
+    );
   }
 
   @Patch(':id')
@@ -65,12 +94,18 @@ export class QuestionsController {
   @ApiNotFoundResponse({ description: 'Exam or question not found' })
   @ApiForbiddenResponse({ description: 'Not the owner or exam is closed' })
   update(
-    @Param('examId') examId: string,
-    @Param('id') id: string,
+    @Param('examId', ParseObjectIdPipe) examId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateQuestionDto,
   ) {
-    return this.questionsService.update(examId, id, req.user.id, dto);
+    return this.questionsService.update(
+      examId,
+      id,
+      req.user.id,
+      dto,
+      req.user.role,
+    );
   }
 
   @Delete(':id')
@@ -80,10 +115,10 @@ export class QuestionsController {
   @ApiNotFoundResponse({ description: 'Exam or question not found' })
   @ApiForbiddenResponse({ description: 'Not the owner or exam is closed' })
   async remove(
-    @Param('examId') examId: string,
-    @Param('id') id: string,
+    @Param('examId', ParseObjectIdPipe) examId: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    await this.questionsService.remove(examId, id, req.user.id);
+    await this.questionsService.remove(examId, id, req.user.id, req.user.role);
   }
 }

@@ -1,0 +1,289 @@
+{
+  "version": 1,
+  "phase": "phase1",
+  "workload": "authenticated-mixed-read-v1",
+  "completed": true,
+  "generatedAt": "2026-10-05T16:22:02.648Z",
+  "provenance": {
+    "environment": "kaggle-cpu",
+    "runId": "kaggle-cpu-2026-10-05T16-20-34-295Z-3cad7c",
+    "gitCommit": "e26dbb0103c7ca14c6ffeaa4fc62399396d51c0c",
+    "sourceTree": "sha256:9837d9d18d9cdce2b97fe2efd1a614d31c41a4d0616e402a6f8d2ced4e9fc5c7",
+    "gitDirty": false,
+    "workloadSha256": "7a0dfd71d8cdbe034bb60bc6b01c7ea2386e8182d58a4404377ec4b37bde175e",
+    "startedAt": "2026-10-05T16:20:34.332Z",
+    "dataset": {
+      "version": 1,
+      "seed": "phase1-v1",
+      "students": 10,
+      "exams": 1,
+      "questionsPerExam": 20,
+      "optionsPerQuestion": 4,
+      "submittedAttemptsPerStudent": 1
+    },
+    "runtime": {
+      "platform": "linux",
+      "accelerator": "none",
+      "cpuCount": 4,
+      "cpuModel": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+      "nodeVersion": "v24.12.0",
+      "mongoVersion": "8.0.30",
+      "k6Version": "k6 v1.6.1 (commit/2ac2bb560e, go1.25.7, linux/amd64)",
+      "kaggleVerified": true
+    }
+  },
+  "config": {
+    "baseUrl": "http://127.0.0.1:3100/api/v1",
+    "virtualUsers": 10,
+    "warmupSeconds": 10,
+    "durationSeconds": 60,
+    "thinkTimeSeconds": 0.25,
+    "gracefulStopSeconds": 0,
+    "timeoutSeconds": 10,
+    "requestMix": [
+      {
+        "name": "users_me",
+        "method": "GET",
+        "path": "/users/me",
+        "expectedStatus": 200
+      },
+      {
+        "name": "exams",
+        "method": "GET",
+        "path": "/exams",
+        "expectedStatus": 200
+      },
+      {
+        "name": "exam_detail",
+        "method": "GET",
+        "path": "/exams/aa1b06009bab58c44bb61f6a",
+        "expectedStatus": 200
+      },
+      {
+        "name": "attempts",
+        "method": "GET",
+        "path": "/attempts?page=1&limit=10",
+        "expectedStatus": 200
+      }
+    ],
+    "summaryFormat": "k6-legacy-custom-v1"
+  },
+  "measurement": {
+    "totalRequests": 8228,
+    "errors": 0,
+    "errorRate": 0,
+    "throughputRequestsPerSecond": 137.13333333333333,
+    "measurementWindowSeconds": 60,
+    "observedLastCompletedRequestMs": 59993,
+    "testRunDurationMs": 74219.977579,
+    "windowBasis": "fixed scheduled baseline interval; gracefulStop=0; completed responses only"
+  },
+  "metrics": {
+    "baseline_unexpected_errors": {
+      "thresholds": {
+        "rate<0.01": {
+          "ok": true
+        }
+      },
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "fails": 8228,
+        "rate": 0,
+        "passes": 0
+      }
+    },
+    "baseline_exams_requests": {
+      "contains": "default",
+      "values": {
+        "count": 2058,
+        "rate": 27.728383477473535
+      },
+      "type": "counter"
+    },
+    "baseline_attempts_requests": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 2055,
+        "rate": 27.687963093395588
+      }
+    },
+    "baseline_users_me_errors": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "baseline_errors": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "baseline_attempts_errors": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "baseline_requests": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 8228,
+        "rate": 110.85964006445688
+      },
+      "thresholds": {
+        "count>0": {
+          "ok": true
+        }
+      }
+    },
+    "baseline_active_vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 10,
+        "min": 10,
+        "max": 10
+      }
+    },
+    "baseline_users_me_latency_ms": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "min": 4.898532,
+        "max": 30.046104,
+        "med": 6.9134135,
+        "p(95)": 10.52927105,
+        "p(99)": 17.09280902000001,
+        "count": 2058,
+        "avg": 7.439615923712329
+      }
+    },
+    "baseline_exams_latency_ms": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 7.369794000000001,
+        "p(95)": 12.24749065,
+        "p(99)": 19.547665430000002,
+        "count": 2058,
+        "avg": 8.004836574344031,
+        "min": 5.430701,
+        "max": 28.629463
+      }
+    },
+    "baseline_exam_detail_latency_ms": {
+      "contains": "time",
+      "values": {
+        "max": 53.407966,
+        "med": 13.68879,
+        "p(95)": 19.833405399999997,
+        "p(99)": 31.102243440000002,
+        "count": 2057,
+        "avg": 14.422917655809428,
+        "min": 10.423732
+      },
+      "type": "trend"
+    },
+    "baseline_exam_detail_requests": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 2057,
+        "rate": 27.71491001611422
+      }
+    },
+    "baseline_attempts_latency_ms": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 13.930570599999998,
+        "p(99)": 21.92679862000001,
+        "count": 2055,
+        "avg": 9.621867904136277,
+        "min": 6.315031,
+        "max": 33.241683,
+        "med": 9.052073
+      }
+    },
+    "baseline_vus_completed": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 10,
+        "rate": 0.13473461359316588
+      }
+    },
+    "baseline_users_me_requests": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 2058,
+        "rate": 27.728383477473535
+      }
+    },
+    "baseline_exam_detail_errors": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "baseline_vus_started": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 10,
+        "rate": 0.13473461359316588
+      }
+    },
+    "baseline_exams_errors": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "baseline_latency_ms": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 15.814581299999999,
+        "p(99)": 23.280802749999868,
+        "count": 8228,
+        "avg": 9.871847763976664,
+        "min": 4.898532,
+        "max": 53.407966,
+        "med": 8.532151500000001
+      }
+    },
+    "baseline_completed_iterations": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 2055,
+        "rate": 27.687963093395588
+      }
+    },
+    "baseline_elapsed_ms": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 59993,
+        "min": 21,
+        "max": 59993
+      }
+    }
+  }
+}

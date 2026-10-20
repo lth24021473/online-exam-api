@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AttemptStatus, Prisma } from '@prisma/client';
+import { AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { lockExamStatus } from '../exams/exam-write-conflict';
 
 const examInfo = { select: { id: true, title: true } } as const;
 
@@ -52,7 +54,7 @@ type GradeAttempt = (
 export class AttemptsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findExamForStart(examId: string) {
+  async findExamForStart(examId: string) {
     return this.prisma.exam.findUnique({
       where: { id: examId },
       select: {
@@ -61,8 +63,39 @@ export class AttemptsRepository {
         instructions: true,
         durationMinutes: true,
         status: true,
+        opensAt: true,
+        closesAt: true,
+        maxAttempts: true,
+        managerId: true,
+        classroomId: true,
         _count: { select: { questions: true } },
       },
+    });
+  }
+
+  async isClassroomMember(classroomId: string, userId: string): Promise<boolean> {
+    const member = await this.prisma.classroomMember.findUnique({
+      where: {
+        classroomId_userId: {
+          classroomId,
+          userId,
+        },
+      },
+    });
+    return !!member;
+  }
+
+  async isUserAdmin(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role === Role.ADMIN;
+  }
+
+  countSubmitted(userId: string, examId: string) {
+    return this.prisma.attempt.count({
+      where: { userId, examId, status: AttemptStatus.SUBMITTED },
     });
   }
 
@@ -73,18 +106,83 @@ export class AttemptsRepository {
     });
   }
 
-  create(data: {
+  createOrResume(data: {
     userId: string;
     examId: string;
     deadlineAt: Date;
     totalQuestions: number;
   }) {
-    return this.prisma.attempt.create({ data });
+    return this.withWriteConflictRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const where = {
+          userId: data.userId,
+          examId: data.examId,
+          status: AttemptStatus.IN_PROGRESS,
+        };
+        const existing = await tx.attempt.findFirst({
+          where,
+          orderBy: { startedAt: 'desc' },
+        });
+        if (existing) return { attempt: existing, resumed: true };
+
+        const user = await tx.user.findUnique({
+          where: { id: data.userId },
+          select: { updatedAt: true },
+        });
+        if (!user) throw new NotFoundException('User not found');
+        // Serialize new attempts for the same account across API processes.
+        // A strictly later timestamp guarantees an actual write, even when
+        // concurrent requests arrive in the same millisecond. No JWT version
+        // changes, so starting an exam preserves every current session.
+        await tx.user.update({
+          where: { id: data.userId },
+          data: {
+            updatedAt: new Date(
+              Math.max(Date.now(), user.updatedAt.getTime() + 1),
+            ),
+          },
+        });
+
+        // Share the exam write lock with publish/close so a stale service
+        // snapshot cannot create a new attempt after closure has committed.
+        try {
+          await lockExamStatus(tx, data.examId, ExamStatus.PUBLISHED);
+        } catch (error) {
+          if (error instanceof BadRequestException) {
+            throw new ConflictException('Exam is closed');
+          }
+          throw error;
+        }
+
+        const running = await tx.attempt.findFirst({
+          where,
+          orderBy: { startedAt: 'desc' },
+        });
+        if (running) return { attempt: running, resumed: true };
+        return {
+          attempt: await tx.attempt.create({ data }),
+          resumed: false,
+        };
+      }),
+    );
   }
 
   findById(id: string) {
     return this.prisma.attempt.findUnique({
       where: { id },
+      include: { exam: examInfo },
+    });
+  }
+
+  findExpiredForExam(examId: string, take: number) {
+    return this.prisma.attempt.findMany({
+      where: {
+        examId,
+        status: AttemptStatus.IN_PROGRESS,
+        deadlineAt: { lte: new Date() },
+      },
+      orderBy: { id: 'asc' },
+      take,
       include: { exam: examInfo },
     });
   }
@@ -213,7 +311,12 @@ export class AttemptsRepository {
   async cancelInProgress(attemptId: string, userId: string) {
     const { count } = await this.withWriteConflictRetry(() =>
       this.prisma.attempt.updateMany({
-        where: { id: attemptId, userId, status: AttemptStatus.IN_PROGRESS },
+        where: {
+          id: attemptId,
+          userId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: { gt: new Date() },
+        },
         data: { status: AttemptStatus.CANCELLED, cancelledAt: new Date() },
       }),
     );
@@ -258,6 +361,12 @@ export class AttemptsRepository {
           error.code !== 'P2034'
         ) {
           throw error;
+        }
+        // Let the winning MongoDB transaction commit before reading a fresh
+        // snapshot. Immediate retries can consume all attempts while the same
+        // concurrent submit is still grading.
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
         }
       }
     }

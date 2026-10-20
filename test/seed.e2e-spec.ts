@@ -11,17 +11,48 @@ const describeMongo = mongoTestUrl ? describe : describe.skip;
 describeMongo('Demo seed (real MongoDB, opt-in)', () => {
   let prisma: PrismaClient;
   let databaseUrl: string;
+  let ownedDatabaseName: string;
 
   beforeAll(() => {
     const target = new URL(mongoTestUrl!);
-    target.pathname = `/online_exam_seed_codex_test_${randomBytes(6).toString('hex')}`;
+    if (
+      target.protocol !== 'mongodb:' ||
+      !['127.0.0.1', 'localhost'].includes(target.hostname) ||
+      target.username ||
+      target.password
+    ) {
+      throw new Error(
+        'Seed tests require an explicit local MongoDB URL without credentials',
+      );
+    }
+    ownedDatabaseName = `online_exam_seed_codex_test_${randomBytes(6).toString('hex')}`;
+    target.pathname = `/${ownedDatabaseName}`;
     databaseUrl = target.toString();
     prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
   });
 
   afterAll(async () => {
-    // Leave this isolated fixture database available for inspection.
-    await prisma?.$disconnect();
+    if (!prisma) return;
+    try {
+      // This exact random database belongs solely to the current test run.
+      // Never drop the supplied database, the application database or old runs.
+      if (
+        !/^online_exam_seed_codex_test_[a-f\d]{12}$/.test(ownedDatabaseName) ||
+        new URL(databaseUrl).pathname !== `/${ownedDatabaseName}`
+      ) {
+        throw new Error(
+          'Refusing cleanup outside the current seed test database',
+        );
+      }
+      const database = await prisma.$runCommandRaw({ dbStats: 1 });
+      if (database.db !== ownedDatabaseName) {
+        throw new Error('Seed cleanup database identity does not match');
+      }
+      const result = await prisma.$runCommandRaw({ dropDatabase: 1 });
+      if (result.ok !== 1) throw new Error('Seed test database cleanup failed');
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   async function runSeed() {

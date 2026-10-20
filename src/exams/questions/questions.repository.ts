@@ -1,6 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ExamStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { lockExamStatus, retryExamWrite } from '../exam-write-conflict';
 
 @Injectable()
 export class QuestionsRepository {
@@ -37,37 +42,68 @@ export class QuestionsRepository {
     });
   }
 
-  create(data: Prisma.QuestionCreateInput) {
-    return this.prisma.question.create({
-      data,
-      include: {
-        options: {
-          orderBy: {
-            position: 'asc',
+  create(examId: string, data: Prisma.QuestionCreateInput) {
+    return retryExamWrite(() =>
+      this.prisma.$transaction(async (tx) => {
+        await lockExamStatus(tx, examId, ExamStatus.DRAFT);
+        return tx.question.create({
+          data,
+          include: {
+            options: {
+              orderBy: {
+                position: 'asc',
+              },
+            },
           },
-        },
-      },
-    });
+        });
+      }),
+    );
   }
 
-  update(id: string, data: Prisma.QuestionUpdateInput) {
-    return this.prisma.question.update({
-      where: { id },
-      data,
-      include: {
-        options: {
-          orderBy: {
-            position: 'asc',
+  update(examId: string, id: string, data: Prisma.QuestionUpdateInput) {
+    return retryExamWrite(() =>
+      this.prisma.$transaction(async (tx) => {
+        await lockExamStatus(tx, examId, ExamStatus.DRAFT);
+        const question = await tx.question.findFirst({ where: { id, examId } });
+        if (!question) throw new NotFoundException('Question not found');
+        if (
+          data.options &&
+          (await tx.attemptAnswer.count({ where: { questionId: id } }))
+        ) {
+          throw new ConflictException(
+            'Options referenced by answers cannot be replaced',
+          );
+        }
+        return tx.question.update({
+          where: { id },
+          data,
+          include: {
+            options: {
+              orderBy: {
+                position: 'asc',
+              },
+            },
           },
-        },
-      },
-    });
+        });
+      }),
+    );
   }
 
-  delete(id: string) {
-    return this.prisma.question.delete({
-      where: { id },
-    });
+  delete(examId: string, id: string) {
+    return retryExamWrite(() =>
+      this.prisma.$transaction(async (tx) => {
+        await lockExamStatus(tx, examId, ExamStatus.DRAFT);
+        const question = await tx.question.findFirst({ where: { id, examId } });
+        if (!question) throw new NotFoundException('Question not found');
+        if (await tx.attemptAnswer.count({ where: { questionId: id } })) {
+          throw new ConflictException(
+            'Questions referenced by answers cannot be deleted',
+          );
+        }
+        await tx.option.deleteMany({ where: { questionId: id } });
+        return tx.question.delete({ where: { id } });
+      }),
+    );
   }
 
   existsByPosition(examId: string, position: number) {

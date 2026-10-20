@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { UsersRepository } from './users.repository';
 
 @Injectable()
@@ -19,6 +20,46 @@ export class UsersService {
 
   async findById(id: string) {
     return this.usersRepository.findById(id);
+  }
+
+  async findAllPublicUsers() {
+    return this.usersRepository.findAll();
+  }
+
+  async findPublicUserOrFail(id: string) {
+    const user = await this.getPublicUserById(id);
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  async updateRole(id: string, role: Role) {
+    await this.findPublicUserOrFail(id);
+    return this.usersRepository.updateRole(id, role);
+  }
+
+  async updateProfile(
+    id: string,
+    dto: {
+      fullName?: string;
+      avatar?: string | null;
+      cover?: string | null;
+      workplace?: string | null;
+      currentResidence?: string | null;
+    },
+  ) {
+    await this.findPublicUserOrFail(id);
+    const updated = await this.usersRepository.updateProfile(id, dto);
+    const {
+      passwordHash: _passwordHash,
+      authVersion: _authVersion,
+      ...publicUser
+    } = updated;
+    return publicUser;
+  }
+
+  async remove(id: string) {
+    await this.findPublicUserOrFail(id);
+    await this.usersRepository.deleteById(id);
   }
 
   async getPublicUserById(id: string) {
