@@ -189,6 +189,7 @@ export class ClassroomsRepository {
 
     return members.map((member) => ({
       id: member.user.id,
+      userId: member.user.id,
       fullName: member.user.fullName,
       email: member.user.email,
       avatar: member.user.avatar,
