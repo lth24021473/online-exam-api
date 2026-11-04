@@ -19,13 +19,6 @@ export class ExamsService {
     private readonly attemptsService: AttemptsService,
   ) {}
 
-  async getExamById(id: string, userId?: string, role?: Role) {
-    if (userId && role) {
-      return this.findOne(id, userId, role);
-    }
-    return this.findOneOrFail(id);
-  }
-
   async findOneOrFail(id: string) {
     const exam = await this.examsRepository.findById(id);
     if (!exam) throw new NotFoundException('Exam not found');
@@ -57,6 +50,8 @@ export class ExamsService {
       instructions: dto.instructions,
       durationMinutes: dto.durationMinutes,
       maxAttempts: dto.maxAttempts ?? 1,
+      enableProctoring: dto.enableProctoring ?? true,
+      maxViolations: dto.maxViolations ?? 3,
       opensAt: dto.opensAt ? new Date(dto.opensAt) : null,
       closesAt: dto.closesAt ? new Date(dto.closesAt) : null,
       manager: { connect: { id: managerId } },
@@ -126,6 +121,8 @@ export class ExamsService {
     if (dto.maxAttempts !== undefined) updateData.maxAttempts = dto.maxAttempts;
     if (dto.opensAt !== undefined) updateData.opensAt = dto.opensAt ? new Date(dto.opensAt) : null;
     if (dto.closesAt !== undefined) updateData.closesAt = dto.closesAt ? new Date(dto.closesAt) : null;
+    if (dto.enableProctoring !== undefined) updateData.enableProctoring = dto.enableProctoring;
+    if (dto.maxViolations !== undefined) updateData.maxViolations = dto.maxViolations;
 
     if (exam.status === ExamStatus.DRAFT) {
       if (dto.durationMinutes !== undefined) updateData.durationMinutes = dto.durationMinutes;
@@ -202,6 +199,8 @@ export class ExamsService {
         title: exam.title,
         status: exam.status,
         durationMinutes: exam.durationMinutes,
+        enableProctoring: exam.enableProctoring,
+        maxViolations: exam.maxViolations,
       },
       ...(await this.examsRepository.listResults(id, query)),
     };

@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -47,6 +48,17 @@ export class CreateExamDto {
   @IsInt()
   @Min(1)
   maxAttempts?: number;
+
+  @ApiPropertyOptional({ example: true, default: true, description: 'Enable proctoring' })
+  @IsOptional()
+  @IsBoolean()
+  enableProctoring?: boolean;
+
+  @ApiPropertyOptional({ example: 3, default: 3, description: 'Max violations before auto-submit' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxViolations?: number;
 
   @ApiPropertyOptional({
     example: '507f1f77bcf86cd799439011',

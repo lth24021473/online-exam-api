@@ -30,6 +30,7 @@ import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 import { ClassroomsService } from './classrooms.service';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
 import { JoinClassroomDto } from './dto/join-classroom.dto';
+import { stripPassword } from './classrooms.util';
 import { ExamsService } from '../exams/exams.service';
 
 @ApiTags('Classrooms')
@@ -73,10 +74,7 @@ export class ClassroomsController {
   @ApiOkResponse({ description: 'Danh sách các lớp học người dùng đã tham gia' })
   async findJoined(@Req() req: AuthenticatedRequest) {
     const classrooms = await this.classroomsService.findJoined(req.user.id);
-    return classrooms.map((classroom: any) => {
-      const { password, ...classroomWithoutPassword } = classroom;
-      return classroomWithoutPassword;
-    });
+    return classrooms.map((classroom: any) => stripPassword(classroom));
   }
 
   @Post('join')
@@ -88,8 +86,7 @@ export class ClassroomsController {
   @ApiConflictResponse({ description: 'Đã tham gia lớp học từ trước' })
   async join(@Req() req: AuthenticatedRequest, @Body() dto: JoinClassroomDto) {
     const classroom = await this.classroomsService.join(req.user.id, dto);
-    const { password, ...classroomWithoutPassword } = classroom as any;
-    return classroomWithoutPassword;
+    return stripPassword(classroom as any);
   }
 
   @Get(':id')

@@ -4,11 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
+import { AttemptStatus, ExamStatus, Prisma, Role, ViolationType } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { retryWithWriteConflict } from '../database/mongo-conflict-retry';
 import { lockExamStatus } from '../exams/exam-write-conflict';
 
-const examInfo = { select: { id: true, title: true } } as const;
+const examInfo = { select: { id: true, title: true, enableProctoring: true, maxViolations: true } } as const;
 
 const gradingQuestionSelect = {
   id: true,
@@ -48,6 +49,7 @@ type GradeAttempt = (
   score: number;
   correctCount: number;
   incorrectCount: number;
+  terminatedReason?: string | null;
 };
 
 @Injectable()
@@ -66,6 +68,8 @@ export class AttemptsRepository {
         opensAt: true,
         closesAt: true,
         maxAttempts: true,
+        enableProctoring: true,
+        maxViolations: true,
         managerId: true,
         classroomId: true,
         _count: { select: { questions: true } },
@@ -349,30 +353,60 @@ export class AttemptsRepository {
     return { items, total };
   }
 
-  private async withWriteConflictRetry<T>(
+  async recordViolation(
+    attemptId: string,
+    userId: string,
+    type: ViolationType,
+    detail?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const attempt = await tx.attempt.findFirst({
+        where: { id: attemptId, userId },
+        include: {
+          exam: {
+            select: { id: true, maxViolations: true, enableProctoring: true },
+          },
+        },
+      });
+      if (!attempt) throw new NotFoundException('Attempt not found');
+      if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+        throw new ConflictException('Attempt is not in progress');
+      }
+
+      const violation = await tx.attemptViolation.create({
+        data: {
+          attemptId,
+          type,
+          detail: detail ? detail.trim() : null,
+        },
+      });
+
+      const updated = await tx.attempt.update({
+        where: { id: attemptId },
+        data: {
+          violationCount: { increment: 1 },
+        },
+      });
+
+      return {
+        violation,
+        violationCount: updated.violationCount,
+        maxViolations: attempt.exam.maxViolations,
+        shouldTerminate: updated.violationCount >= attempt.exam.maxViolations,
+      };
+    });
+  }
+
+  async findViolations(attemptId: string) {
+    return this.prisma.attemptViolation.findMany({
+      where: { attemptId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  private withWriteConflictRetry<T>(
     operation: () => Promise<T>,
   ): Promise<T> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        return await operation();
-      } catch (error) {
-        if (
-          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-          error.code !== 'P2034'
-        ) {
-          throw error;
-        }
-        // Let the winning MongoDB transaction commit before reading a fresh
-        // snapshot. Immediate retries can consume all attempts while the same
-        // concurrent submit is still grading.
-        if (attempt < 2) {
-          await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
-        }
-      }
-    }
-
-    throw new ConflictException(
-      'Attempt changed concurrently. Please retry the operation',
-    );
+    return retryWithWriteConflict(operation, 'Attempt');
   }
 }

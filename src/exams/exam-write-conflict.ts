@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { ExamStatus, Prisma } from '@prisma/client';
+import { retryWithWriteConflict } from '../database/mongo-conflict-retry';
 
 /** Every edit and status change writes the exam, protecting its question snapshot. */
 export async function lockExamStatus(
@@ -28,7 +29,7 @@ export async function lockExamStatus(
 export async function retryExamWrite<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
-  for (let attempt = 0; ; attempt += 1) {
+  return retryWithWriteConflict(async () => {
     try {
       return await operation();
     } catch (error) {
@@ -40,19 +41,7 @@ export async function retryExamWrite<T>(
           'A question or option with this position already exists',
         );
       }
-      if (
-        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-        error.code !== 'P2034'
-      ) {
-        throw error;
-      }
-      if (attempt >= 2) {
-        throw new ConflictException(
-          'Exam changed concurrently. Please retry the operation',
-        );
-      }
-      // Give the competing transaction time to commit before retrying.
-      await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+      throw error;
     }
-  }
+  }, 'Exam');
 }
