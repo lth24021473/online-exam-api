@@ -34,6 +34,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { ParseObjectIdPipe } from './parse-object-id.pipe';
 import { AttemptsService } from './attempts.service';
 import { SaveAnswerDto } from './dto/save-answer.dto';
+import { RecordViolationDto } from './dto/record-violation.dto';
 
 @ApiTags('Attempts')
 @ApiBearerAuth()
@@ -56,7 +57,11 @@ export class AttemptsController {
     @Req() request: AuthenticatedRequest,
     @Param('examId', ParseObjectIdPipe) examId: string,
   ) {
-    return this.attemptsService.start(request.user.id, examId);
+    return this.attemptsService.start(
+      request.user.id,
+      examId,
+      request.user.role as Role,
+    );
   }
 
   // NOTE: must stay above any `attempts/:attemptId` GET route.
@@ -141,5 +146,40 @@ export class AttemptsController {
     @Param('attemptId', ParseObjectIdPipe) attemptId: string,
   ) {
     return this.attemptsService.getResult(request.user.id, attemptId);
+  }
+  @Post('attempts/:attemptId/violations')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Record a proctoring violation for an in-progress attempt',
+  })
+  @ApiNotFoundResponse({ description: 'Attempt not found' })
+  @ApiConflictResponse({ description: 'Attempt is not in progress' })
+  recordViolation(
+    @Req() request: AuthenticatedRequest,
+    @Param('attemptId', ParseObjectIdPipe) attemptId: string,
+    @Body() dto: RecordViolationDto,
+  ) {
+    return this.attemptsService.recordViolation(
+      request.user.id,
+      attemptId,
+      dto,
+    );
+  }
+
+  @Get('attempts/:attemptId/violations')
+  @Roles(Role.EXAM_MANAGER, Role.ADMIN, Role.STUDENT)
+  @ApiOperation({
+    summary: 'Get all recorded proctoring violations for an attempt',
+  })
+  @ApiNotFoundResponse({ description: 'Attempt not found' })
+  getViolations(
+    @Req() request: AuthenticatedRequest,
+    @Param('attemptId', ParseObjectIdPipe) attemptId: string,
+  ) {
+    return this.attemptsService.getViolations(
+      request.user.id,
+      request.user.role,
+      attemptId,
+    );
   }
 }

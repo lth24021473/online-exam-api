@@ -9,6 +9,7 @@ import { Role } from '@prisma/client';
 import { ClassroomsRepository } from './classrooms.repository';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
 import { JoinClassroomDto } from './dto/join-classroom.dto';
+import { stripPassword } from './classrooms.util';
 
 export const CLASSROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -82,9 +83,7 @@ export class ClassroomsService {
     );
 
     const joinedClassroom = membership?.classroom ?? classroom;
-    const { password, ...classroomWithoutPassword } =
-      joinedClassroom as typeof joinedClassroom & { password?: string };
-    return classroomWithoutPassword;
+    return stripPassword(joinedClassroom);
   }
 
   async findManaged(managerId: string) {

@@ -232,58 +232,75 @@ export class ExamsRepository {
       ...(query.status ? { status: query.status } : {}),
     };
     return this.prisma.$transaction(async (tx) => {
-      const data = await tx.attempt.findMany({
-        where,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
-        select: {
-          id: true,
-          status: true,
-          startedAt: true,
-          deadlineAt: true,
-          submittedAt: true,
-          cancelledAt: true,
-          score: true,
-          totalQuestions: true,
-          correctCount: true,
-          incorrectCount: true,
-          user: { select: { id: true, email: true, fullName: true } },
-        },
-      });
-      const total = await tx.attempt.count({ where });
-      const counts = await tx.attempt.groupBy({
-        by: ['status'],
-        where: { examId },
-        _count: { _all: true },
-      });
-      const scores = await tx.attempt.aggregate({
-        where: { examId, status: AttemptStatus.SUBMITTED },
-        _avg: { score: true },
-        _min: { score: true },
-        _max: { score: true },
-      });
-      const count = (status: AttemptStatus) =>
-        counts.find((row) => row.status === status)?._count._all ?? 0;
-
-      const submittedForLeaderboard = await tx.attempt.findMany({
-        where: { examId, status: AttemptStatus.SUBMITTED, score: { not: null } },
-        select: {
-          id: true,
-          userId: true,
-          score: true,
-          startedAt: true,
-          submittedAt: true,
-          user: {
+      const [data, total, counts, scores, submittedForLeaderboard] =
+        await Promise.all([
+          tx.attempt.findMany({
+            where,
+            skip: (query.page - 1) * query.limit,
+            take: query.limit,
+            orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
             select: {
               id: true,
-              email: true,
-              fullName: true,
-              avatar: true,
+              status: true,
+              startedAt: true,
+              deadlineAt: true,
+              submittedAt: true,
+              cancelledAt: true,
+              score: true,
+              totalQuestions: true,
+              correctCount: true,
+              incorrectCount: true,
+              violationCount: true,
+              terminatedReason: true,
+              violations: {
+                select: {
+                  id: true,
+                  type: true,
+                  detail: true,
+                  createdAt: true,
+                },
+                orderBy: { createdAt: 'asc' },
+              },
+              user: { select: { id: true, email: true, fullName: true } },
             },
-          },
-        },
-      });
+          }),
+          tx.attempt.count({ where }),
+          tx.attempt.groupBy({
+            by: ['status'],
+            where: { examId },
+            _count: { _all: true },
+          }),
+          tx.attempt.aggregate({
+            where: { examId, status: AttemptStatus.SUBMITTED },
+            _avg: { score: true },
+            _min: { score: true },
+            _max: { score: true },
+          }),
+          tx.attempt.findMany({
+            where: {
+              examId,
+              status: AttemptStatus.SUBMITTED,
+              score: { not: null },
+            },
+            select: {
+              id: true,
+              userId: true,
+              score: true,
+              startedAt: true,
+              submittedAt: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  fullName: true,
+                  avatar: true,
+                },
+              },
+            },
+          }),
+        ]);
+      const count = (status: AttemptStatus) =>
+        counts.find((row) => row.status === status)?._count._all ?? 0;
 
       const bestByUser = new Map<
         string,
