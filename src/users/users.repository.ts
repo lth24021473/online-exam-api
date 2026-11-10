@@ -1,9 +1,8 @@
 import {
-  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -78,23 +77,5 @@ export class UsersRepository {
     });
     if (!user) throw new NotFoundException('User not found');
     return user;
-  }
-
-  async deleteById(id: string) {
-    try {
-      return await this.prisma.user.delete({ where: { id } });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') {
-          throw new NotFoundException('User not found');
-        }
-        if (error.code === 'P2014' || error.code === 'P2003') {
-          throw new ConflictException(
-            'User cannot be deleted while they own exams or attempts',
-          );
-        }
-      }
-      throw error;
-    }
   }
 }

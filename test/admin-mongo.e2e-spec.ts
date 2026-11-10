@@ -214,18 +214,13 @@ describeMongo('Admin sessions with real MongoDB', () => {
     ).toBe(0);
   });
 
-  it('rejects deleted users across me, exams and attempts, while retaining other sessions', async () => {
+  it('does not expose a delete user endpoint and retains the user account and sessions', async () => {
     const token = await login(account);
     await request(app.getHttpServer())
       .delete(`${api}/admin/users/${account.id}`)
       .auth(adminToken, { type: 'bearer' })
-      .expect(204);
-    for (const endpoint of ['users/me', 'exams', 'attempts']) {
-      await request(app.getHttpServer())
-        .get(`${api}/${endpoint}`)
-        .auth(token, { type: 'bearer' })
-        .expect(401);
-    }
+      .expect(404);
+    await me(token).expect(200);
     await me(adminToken).expect(200);
   });
 
@@ -240,19 +235,15 @@ describeMongo('Admin sessions with real MongoDB', () => {
       .expect(403);
   });
 
-  it('invalidates the admin own session after account deletion', async () => {
+  it('does not permit admin self-deletion endpoint and retains the admin session', async () => {
     await request(app.getHttpServer())
       .delete(`${api}/admin/users/${admin.id}`)
       .auth(adminToken, { type: 'bearer' })
-      .expect(204);
-    await me(adminToken).expect(401);
-    await request(app.getHttpServer())
-      .post(`${api}/auth/login`)
-      .send({ email: admin.email, password })
-      .expect(401);
+      .expect(404);
+    await me(adminToken).expect(200);
   });
 
-  it('rejects deleting an exam owner without invalidating or erasing the account', async () => {
+  it('rejects deleting an exam owner with 404 Not Found', async () => {
     const manager = await createUser(Role.EXAM_MANAGER);
     const exam = await prisma.exam.create({
       data: {
@@ -263,13 +254,10 @@ describeMongo('Admin sessions with real MongoDB', () => {
     });
     ownedExamIds.push(exam.id);
     const token = await login(manager);
-    const response = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .delete(`${api}/admin/users/${manager.id}`)
       .auth(adminToken, { type: 'bearer' })
-      .expect(409);
-    expect(response.body.message).toBe(
-      'User cannot be deleted while they own exams or attempts',
-    );
+      .expect(404);
     await me(token).expect(200);
     expect(
       await prisma.exam.findUnique({ where: { id: exam.id } }),

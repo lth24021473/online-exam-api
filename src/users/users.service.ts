@@ -1,4 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { UsersRepository } from './users.repository';
 
@@ -35,11 +38,6 @@ export class UsersService {
   async updateRole(id: string, role: Role) {
     await this.findPublicUserOrFail(id);
     return this.usersRepository.updateRole(id, role);
-  }
-
-  async remove(id: string) {
-    await this.findPublicUserOrFail(id);
-    await this.usersRepository.deleteById(id);
   }
 
   async getPublicUserById(id: string) {

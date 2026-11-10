@@ -1,9 +1,6 @@
 import {
   Controller,
-  Delete,
   Get,
-  HttpCode,
-  HttpStatus,
   Param,
   Patch,
   Body,
@@ -11,14 +8,12 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
-  ApiConflictResponse,
   ApiBadRequestResponse,
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -65,16 +60,5 @@ export class AdminUsersController {
     @Body() dto: UpdateUserRoleDto,
   ) {
     return this.usersService.updateRole(id, dto.role);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: '[ADMIN] Delete a user account' })
-  @ApiNoContentResponse({ description: 'User deleted' })
-  @ApiBadRequestResponse({ description: 'Invalid user ID' })
-  @ApiConflictResponse({ description: 'User still owns exams or attempts' })
-  @ApiNotFoundResponse({ description: 'User not found' })
-  async remove(@Param('id', ParseObjectIdPipe) id: string) {
-    await this.usersService.remove(id);
   }
 }
