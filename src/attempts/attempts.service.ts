@@ -1,9 +1,11 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Attempt, AttemptStatus, ExamStatus, Prisma } from '@prisma/client';
+import { Attempt, AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
+import { RecordViolationDto } from './dto/record-violation.dto';
 import { AttemptsRepository } from './attempts.repository';
 
 export const MAX_SCORE = 10;
@@ -13,6 +15,8 @@ type ExamInfo = {
   title: string;
   instructions: string | null;
   durationMinutes: number;
+  enableProctoring?: boolean;
+  maxViolations?: number;
 };
 
 type OwnedAttempt = NonNullable<
@@ -26,6 +30,7 @@ export class AttemptsService {
   async start(
     userId: string,
     examId: string,
+    userRole?: Role,
   ): Promise<
     { resumed: boolean } &
       Awaited<ReturnType<AttemptsService['buildSession']>>
@@ -33,6 +38,27 @@ export class AttemptsService {
     const exam = await this.repo.findExamForStart(examId);
     if (!exam || exam.status === ExamStatus.DRAFT) {
       throw new NotFoundException('Exam not found');
+    }
+
+    if (exam.classroomId) {
+      const isMember = await this.repo.isClassroomMember(
+        exam.classroomId,
+        userId,
+      );
+      const isOwner = exam.managerId === userId;
+      let isAdmin = false;
+      if (!isMember && !isOwner) {
+        if (userRole !== undefined) {
+          isAdmin = userRole === Role.ADMIN;
+        } else {
+          isAdmin = await this.repo.isUserAdmin(userId);
+        }
+      }
+      if (!isMember && !isOwner && !isAdmin) {
+        throw new ForbiddenException(
+          'Đề thi này chỉ dành cho học sinh trong lớp',
+        );
+      }
     }
     const existing = await this.repo.findInProgress(userId, examId);
     if (existing) {
@@ -49,20 +75,41 @@ export class AttemptsService {
       throw new ConflictException('Exam is closed');
     }
 
+    if (exam.opensAt && Date.now() < exam.opensAt.getTime()) {
+      throw new ConflictException('Exam is not open yet');
+    }
+
+    if (exam.closesAt && Date.now() >= exam.closesAt.getTime()) {
+      throw new ConflictException('Exam is closed');
+    }
+
+    const maxAttempts = exam.maxAttempts ?? 1;
+    const submittedCount = await this.repo.countSubmitted(userId, examId);
+    if (submittedCount >= maxAttempts) {
+      throw new ConflictException(
+        `Maximum attempts reached (${submittedCount}/${maxAttempts})`,
+      );
+    }
+
     const totalQuestions = exam._count.questions;
     if (totalQuestions === 0) {
       throw new ConflictException('Exam has no questions');
+    }
+
+    let deadlineAt = new Date(Date.now() + exam.durationMinutes * 60_000);
+    if (exam.closesAt && exam.closesAt.getTime() < deadlineAt.getTime()) {
+      deadlineAt = exam.closesAt;
     }
 
     const { attempt, resumed } = await this.repo.createOrResume({
       userId,
       examId,
       totalQuestions,
-      deadlineAt: new Date(Date.now() + exam.durationMinutes * 60_000),
+      deadlineAt,
     });
     if (resumed && attempt.deadlineAt.getTime() <= Date.now()) {
       await this.finalize(attempt);
-      return this.start(userId, examId);
+      return this.start(userId, examId, userRole);
     }
     return { resumed, ...(await this.buildSession(attempt, exam)) };
   }
@@ -228,12 +275,16 @@ export class AttemptsService {
         startedAt: attempt.startedAt,
         deadlineAt: attempt.deadlineAt,
         totalQuestions: attempt.totalQuestions,
+        violationCount: attempt.violationCount,
+        terminatedReason: attempt.terminatedReason,
       },
       exam: {
         id: exam.id,
         title: exam.title,
         instructions: exam.instructions,
         durationMinutes: exam.durationMinutes,
+        enableProctoring: exam.enableProctoring ?? true,
+        maxViolations: exam.maxViolations ?? 3,
       },
       questions: questions.map((q) => ({
         id: q.id,
@@ -248,7 +299,7 @@ export class AttemptsService {
     };
   }
 
-  private async finalize(attempt: Attempt) {
+  private async finalize(attempt: Attempt, terminatedReason?: string) {
     return this.repo.submitInProgress(
       attempt.id,
       attempt.userId,
@@ -269,6 +320,9 @@ export class AttemptsService {
         ).length;
         const total = current.totalQuestions;
         const now = new Date();
+        const reason =
+          terminatedReason ??
+          (now > current.deadlineAt ? 'TIME_EXPIRED' : 'NORMAL_SUBMIT');
         return {
           submittedAt: now > current.deadlineAt ? current.deadlineAt : now,
           correctCount,
@@ -276,6 +330,7 @@ export class AttemptsService {
           score: total
             ? Math.round((correctCount / total) * MAX_SCORE * 100) / 100
             : 0,
+          terminatedReason: reason,
         };
       },
     );
@@ -304,6 +359,8 @@ export class AttemptsService {
         score: attempt.score,
         maxScore: MAX_SCORE,
         totalQuestions: attempt.totalQuestions,
+        violationCount: attempt.violationCount,
+        terminatedReason: attempt.terminatedReason,
         correctCount: attempt.correctCount,
         incorrectCount: attempt.incorrectCount,
         unansweredCount: attempt.totalQuestions - answers.length,
@@ -325,6 +382,55 @@ export class AttemptsService {
           ),
         };
       }),
+    };
+  }
+  async recordViolation(
+    userId: string,
+    attemptId: string,
+    dto: RecordViolationDto,
+  ) {
+    const res = await this.repo.recordViolation(
+      attemptId,
+      userId,
+      dto.type,
+      dto.detail,
+    );
+
+    let submitted = false;
+    let result: any = null;
+    if (res.shouldTerminate) {
+      const attempt = await this.repo.findById(attemptId);
+      if (attempt && attempt.status === AttemptStatus.IN_PROGRESS) {
+        const finalized = await this.finalize(attempt, 'EXCEEDED_VIOLATIONS');
+        submitted = true;
+        result = await this.buildResult(finalized);
+      }
+    }
+
+    return {
+      violation: res.violation,
+      violationCount: res.violationCount,
+      maxViolations: res.maxViolations,
+      terminated: res.shouldTerminate,
+      submitted,
+      result,
+    };
+  }
+
+  async getViolations(userId: string, role: Role, attemptId: string) {
+    if (role === Role.STUDENT) {
+      await this.getOwnedAttempt(userId, attemptId);
+    } else {
+      const attempt = await this.repo.findById(attemptId);
+      if (!attempt) {
+        throw new NotFoundException('Attempt not found');
+      }
+    }
+
+    const violations = await this.repo.findViolations(attemptId);
+    return {
+      attemptId,
+      violations,
     };
   }
 }

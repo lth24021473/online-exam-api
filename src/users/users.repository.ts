@@ -35,6 +35,22 @@ export class UsersRepository {
     });
   }
 
+  async updateProfile(
+    id: string,
+    data: {
+      fullName?: string;
+      avatar?: string | null;
+      cover?: string | null;
+      workplace?: string | null;
+      currentResidence?: string | null;
+    },
+  ) {
+    return this.prisma.user.update({
+      where: { id },
+      data,
+    });
+  }
+
   async findAll() {
     return this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
@@ -43,6 +59,10 @@ export class UsersRepository {
         email: true,
         fullName: true,
         role: true,
+        avatar: true,
+        cover: true,
+        workplace: true,
+        currentResidence: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -72,6 +92,10 @@ export class UsersRepository {
         email: true,
         fullName: true,
         role: true,
+        avatar: true,
+        cover: true,
+        workplace: true,
+        currentResidence: true,
         updatedAt: true,
       },
     });

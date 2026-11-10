@@ -25,6 +25,15 @@ enum AttemptStatus {
   CANCELLED
 }
 
+enum ViolationType {
+  TAB_SWITCH
+  FULLSCREEN_EXIT
+  DEVTOOLS_OPEN
+  CLIPBOARD_ACTION
+  MULTIPLE_FACES
+  NO_FACE_DETECTED
+}
+
 model RevokedToken {
   tokenHash String   @id @map("_id")
   expiresAt DateTime
@@ -43,37 +52,80 @@ model PasswordResetToken {
 }
 
 model User {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  role         Role     @default(STUDENT)
-  authVersion  Int?     @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  email            String   @unique
+  passwordHash     String
+  fullName         String
+  role             Role     @default(STUDENT)
+  avatar           String?
+  cover            String?
+  workplace        String?
+  currentResidence String?
+  authVersion      Int?     @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  exams    Exam[]
-  attempts Attempt[]
+  exams             Exam[]
+  attempts          Attempt[]
+  managedClassrooms Classroom[]       @relation("ManagerClassrooms")
+  classroomMembers  ClassroomMember[]
+}
+
+model Classroom {
+  id          String            @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  code        String            @unique
+  description String?
+  password    String
+  managerId   String            @db.ObjectId
+  manager     User              @relation("ManagerClassrooms", fields: [managerId], references: [id])
+  members     ClassroomMember[]
+  exams       Exam[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([managerId])
+}
+
+model ClassroomMember {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  classroomId String    @db.ObjectId
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  userId      String    @db.ObjectId
+  user        User      @relation(fields: [userId], references: [id])
+  joinedAt    DateTime  @default(now())
+
+  @@unique([classroomId, userId])
+  @@index([userId])
+  @@index([classroomId])
 }
 
 model Exam {
-  id              String     @id @default(auto()) @map("_id") @db.ObjectId
-  title           String
-  description     String?
-  instructions    String?
-  durationMinutes Int
-  status          ExamStatus @default(DRAFT)
-  publishedAt     DateTime?
-  closedAt        DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  managerId       String     @db.ObjectId
-  manager         User       @relation(fields: [managerId], references: [id])
-  questions       Question[]
-  attempts        Attempt[]
+  id               String     @id @default(auto()) @map("_id") @db.ObjectId
+  title            String
+  description      String?
+  instructions     String?
+  durationMinutes  Int
+  status           ExamStatus @default(DRAFT)
+  publishedAt      DateTime?
+  closedAt         DateTime?
+  opensAt          DateTime?
+  closesAt         DateTime?
+  maxAttempts      Int        @default(1)
+  enableProctoring Boolean    @default(true)
+  maxViolations    Int        @default(3)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  managerId        String     @db.ObjectId
+  manager          User       @relation(fields: [managerId], references: [id])
+  questions        Question[]
+  attempts         Attempt[]
+  classroomId      String?    @db.ObjectId
+  classroom        Classroom? @relation(fields: [classroomId], references: [id])
 
   @@index([managerId])
   @@index([status])
+  @@index([classroomId])
 }
 
 model Question {
@@ -101,25 +153,40 @@ model Option {
 }
 
 model Attempt {
-  id             String        @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String        @db.ObjectId
-  user           User          @relation(fields: [userId], references: [id])
-  examId         String        @db.ObjectId
-  exam           Exam          @relation(fields: [examId], references: [id])
-  status         AttemptStatus @default(IN_PROGRESS)
-  startedAt      DateTime      @default(now())
-  deadlineAt     DateTime
-  submittedAt    DateTime?
-  cancelledAt    DateTime?
-  answerVersion  Int           @default(0)
-  score          Float?
-  totalQuestions Int
-  correctCount   Int?
-  incorrectCount Int?
-  answers        AttemptAnswer[]
+  id               String             @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String             @db.ObjectId
+  user             User               @relation(fields: [userId], references: [id])
+  examId           String             @db.ObjectId
+  exam             Exam               @relation(fields: [examId], references: [id])
+  status           AttemptStatus      @default(IN_PROGRESS)
+  startedAt        DateTime           @default(now())
+  deadlineAt       DateTime
+  submittedAt      DateTime?
+  cancelledAt      DateTime?
+  answerVersion    Int                @default(0)
+  score            Float?
+  totalQuestions   Int
+  correctCount     Int?
+  incorrectCount   Int?
+  violationCount   Int                @default(0)
+  terminatedReason String?
+  answers          AttemptAnswer[]
+  violations       AttemptViolation[]
 
   @@index([userId, startedAt])
   @@index([examId, status])
+}
+
+model AttemptViolation {
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  attemptId String        @db.ObjectId
+  attempt   Attempt       @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type      ViolationType
+  detail    String?
+  createdAt DateTime      @default(now())
+
+  @@index([attemptId])
+  @@index([type])
 }
 
 model AttemptAnswer {

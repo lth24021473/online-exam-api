@@ -32,6 +32,7 @@ import { Roles } from '../auth/roles.decorator';
 import { ExamsService } from './exams.service';
 import { CreateExamDto } from './dto/create-exam.dto';
 import { UpdateExamDto } from './dto/update-exam.dto';
+import { ReopenExamDto } from './dto/reopen-exam.dto';
 import { ExamResultsQueryDto } from './dto/exam-results-query.dto';
 import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 
@@ -50,7 +51,7 @@ export class ExamsController {
   @ApiUnauthorizedResponse({ description: 'Missing or invalid token' })
   @ApiForbiddenResponse({ description: 'Insufficient role' })
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateExamDto) {
-    return this.examsService.create(req.user.id, dto);
+    return this.examsService.create(req.user.id, dto, req.user.role as Role);
   }
 
   @Get()
@@ -164,5 +165,33 @@ export class ExamsController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.examsService.close(id, req.user.id, req.user.role as Role);
+  }
+
+  @Put(':id/reopen')
+  @Roles(Role.EXAM_MANAGER, Role.ADMIN)
+  @ApiOperation({ summary: '[EXAM_MANAGER/ADMIN] Reopen a CLOSED exam' })
+  @ApiOkResponse({ description: 'Exam is now PUBLISHED again' })
+  @ApiNotFoundResponse({ description: 'Exam not found' })
+  @ApiForbiddenResponse({ description: 'Not the owner or not CLOSED' })
+  reopen(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: ReopenExamDto,
+  ) {
+    return this.examsService.reopen(id, req.user.id, req.user.role as Role, dto);
+  }
+
+  @Post(':id/reopen')
+  @Roles(Role.EXAM_MANAGER, Role.ADMIN)
+  @ApiOperation({ summary: '[EXAM_MANAGER/ADMIN] Reopen a CLOSED exam (POST alias)' })
+  @ApiOkResponse({ description: 'Exam is now PUBLISHED again' })
+  @ApiNotFoundResponse({ description: 'Exam not found' })
+  @ApiForbiddenResponse({ description: 'Not the owner or not CLOSED' })
+  reopenPost(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto?: ReopenExamDto,
+  ) {
+    return this.examsService.reopen(id, req.user.id, req.user.role as Role, dto);
   }
 }

@@ -21,10 +21,6 @@ export class UsersService {
     return this.usersRepository.findByEmail(email);
   }
 
-  async findById(id: string) {
-    return this.usersRepository.findById(id);
-  }
-
   async findAllPublicUsers() {
     return this.usersRepository.findAll();
   }
@@ -36,7 +32,6 @@ export class UsersService {
   }
 
   async updateRole(id: string, role: Role) {
-    await this.findPublicUserOrFail(id);
     return this.usersRepository.updateRole(id, role);
   }
 
