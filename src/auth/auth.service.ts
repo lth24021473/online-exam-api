@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma, User } from '@prisma/client';
@@ -16,6 +17,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -180,6 +182,65 @@ export class AuthService {
     return {
       message:
         'Password has been reset successfully. Please log in with your new password.',
+    };
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ message: string; accessToken: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new NotFoundException('Account no longer exists');
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+    if (!passwordMatches) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 12);
+
+    // Set authVersion to 0 if missing, then increment to invalidate existing JWT sessions
+    await this.prisma.user.updateMany({
+      where: {
+        id: user.id,
+        OR: [{ authVersion: { isSet: false } }, { authVersion: null }],
+      },
+      data: { authVersion: 0 },
+    });
+
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        authVersion: { increment: 1 },
+      },
+    });
+
+    const payload = {
+      sub: updated.id,
+      email: updated.email,
+      role: updated.role,
+      authVersion: updated.authVersion ?? 0,
+      jti: randomUUID(),
+    };
+    const accessToken = await this.jwtService.signAsync(payload);
+
+    return {
+      message: 'Password changed successfully',
+      accessToken,
     };
   }
 
