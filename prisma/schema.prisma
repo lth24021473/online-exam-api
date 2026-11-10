@@ -41,6 +41,16 @@ model RevokedToken {
   @@index([expiresAt])
 }
 
+model PasswordResetToken {
+  tokenHash String   @id @map("_id")
+  email     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
 model User {
   id               String   @id @default(auto()) @map("_id") @db.ObjectId
   email            String   @unique

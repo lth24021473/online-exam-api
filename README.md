@@ -30,11 +30,12 @@ Trong thư mục frontend riêng `D:/online-exam-front`, cấu hình `VITE_API_U
 | `POST /auth/register` | Tạo tài khoản STUDENT, mật khẩu băm bcrypt | Khách |
 | `POST /auth/login` | Trả JWT và thông tin tài khoản an toàn | Khách |
 | `POST /auth/logout` | Thu hồi JWT đang dùng, trả 204 | Đã đăng nhập |
+| `POST /auth/forgot-password` | Gửi mã/liên kết đặt lại mật khẩu qua email | Khách |
+| `POST /auth/reset-password` | Đặt lại mật khẩu bằng mã/token nhận qua email | Khách |
 | `GET /users/me` | Thông tin tài khoản hiện tại | Đã đăng nhập |
 | `GET /admin/users` | Danh sách tài khoản | ADMIN |
 | `GET /admin/users/:id` | Chi tiết tài khoản | ADMIN |
 | `PATCH /admin/users/:id/role` | Đổi quyền với `{ "role": "STUDENT" }` (hoặc EXAM_MANAGER/ADMIN) | ADMIN |
-| `DELETE /admin/users/:id` | Xóa tài khoản không còn dữ liệu phụ thuộc | ADMIN |
 
 Đăng ký không cho người dùng tự cấp quyền. Guard kiểm tra tài khoản hiện tại, phiên bản quyền và danh sách JWT bị thu hồi tại mọi request cần xác thực. Đăng xuất lưu **hash** JWT và thời hạn vào MongoDB, nên khởi động lại API không khôi phục token đã thu hồi. Đăng nhập lần khác tạo JWT mới. Đổi quyền rồi đổi lại không khôi phục JWT cũ. ID ADMIN không hợp lệ trả 400; sai quyền trả 403; tài khoản/token không còn hợp lệ trả 401.
 

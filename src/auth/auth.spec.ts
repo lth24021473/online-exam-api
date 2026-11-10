@@ -22,6 +22,8 @@ import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
 import { Role } from '@prisma/client';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { MailService } from '../mail/mail.service';
+import { createHash } from 'node:crypto';
 
 @Controller('protected-test')
 class ProtectedTestController {
@@ -57,16 +59,30 @@ describe('Authentication HTTP flow', () => {
   let app: INestApplication;
   let savedUser: any;
   const revokedTokens = new Map<string, unknown>();
+  const passwordResetTokens = new Map<string, any>();
   const revokedToken = {
     findUnique: jest.fn(),
     upsert: jest.fn(),
+  };
+  const passwordResetToken = {
+    deleteMany: jest.fn(),
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    delete: jest.fn(),
+  };
+  const mailService = {
+    sendPasswordResetEmail: jest.fn(),
   };
   const repository = {
     findByEmail: jest.fn(),
     findById: jest.fn(),
     create: jest.fn(),
   };
-  const prismaUser = { findUnique: jest.fn() };
+  const prismaUser = {
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
+    update: jest.fn(),
+  };
   const registration = {
     email: ' Student@Example.com ',
     fullName: ' Nguyen Van An ',
@@ -90,9 +106,14 @@ describe('Authentication HTTP flow', () => {
         TokenRevocationService,
         {
           provide: PrismaService,
-          useValue: { revokedToken, user: prismaUser },
+          useValue: {
+            revokedToken,
+            user: prismaUser,
+            passwordResetToken,
+          },
         },
         { provide: UsersRepository, useValue: repository },
+        { provide: MailService, useValue: mailService },
       ],
     }).compile();
     app = module.createNestApplication();
@@ -116,6 +137,35 @@ describe('Authentication HTTP flow', () => {
     revokedToken.upsert.mockImplementation(async ({ create }) => {
       revokedTokens.set(create.tokenHash, create);
       return create;
+    });
+    passwordResetTokens.clear();
+    passwordResetToken.deleteMany.mockImplementation(async ({ where }) => {
+      for (const [key, value] of passwordResetTokens.entries()) {
+        if (value.email === where?.email) {
+          passwordResetTokens.delete(key);
+        }
+      }
+    });
+    passwordResetToken.create.mockImplementation(async ({ data }) => {
+      passwordResetTokens.set(data.tokenHash, data);
+      return data;
+    });
+    passwordResetToken.findUnique.mockImplementation(async ({ where }) => {
+      return passwordResetTokens.get(where.tokenHash) ?? null;
+    });
+    passwordResetToken.delete.mockImplementation(async ({ where }) => {
+      passwordResetTokens.delete(where.tokenHash);
+    });
+    prismaUser.updateMany.mockResolvedValue({ count: 1 });
+    prismaUser.update.mockImplementation(async ({ where, data }) => {
+      if (savedUser?.id === where.id) {
+        if (data.passwordHash) savedUser.passwordHash = data.passwordHash;
+        if (data.authVersion?.increment) {
+          savedUser.authVersion =
+            (savedUser.authVersion ?? 0) + data.authVersion.increment;
+        }
+      }
+      return savedUser;
     });
     savedUser = undefined;
     repository.findById.mockImplementation(async (id) =>
@@ -168,6 +218,35 @@ describe('Authentication HTTP flow', () => {
     expect(response.body).toEqual(registered.body.user);
     expect(response.body).not.toHaveProperty('passwordHash');
     expect(repository.findById).toHaveBeenCalledWith(savedUser.id);
+    passwordResetTokens.clear();
+    passwordResetToken.deleteMany.mockImplementation(async ({ where }) => {
+      for (const [key, value] of passwordResetTokens.entries()) {
+        if (value.email === where?.email) {
+          passwordResetTokens.delete(key);
+        }
+      }
+    });
+    passwordResetToken.create.mockImplementation(async ({ data }) => {
+      passwordResetTokens.set(data.tokenHash, data);
+      return data;
+    });
+    passwordResetToken.findUnique.mockImplementation(async ({ where }) => {
+      return passwordResetTokens.get(where.tokenHash) ?? null;
+    });
+    passwordResetToken.delete.mockImplementation(async ({ where }) => {
+      passwordResetTokens.delete(where.tokenHash);
+    });
+    prismaUser.updateMany.mockResolvedValue({ count: 1 });
+    prismaUser.update.mockImplementation(async ({ where, data }) => {
+      if (savedUser?.id === where.id) {
+        if (data.passwordHash) savedUser.passwordHash = data.passwordHash;
+        if (data.authVersion?.increment) {
+          savedUser.authVersion =
+            (savedUser.authVersion ?? 0) + data.authVersion.increment;
+        }
+      }
+      return savedUser;
+    });
     savedUser = undefined;
     await me().expect(401);
   });
@@ -368,5 +447,92 @@ describe('Authentication HTTP flow', () => {
         .expect(401);
     }
     expect(revokedToken.upsert).not.toHaveBeenCalled();
+  });
+
+  describe('Password reset flow', () => {
+    it('requests password reset email and resets password successfully', async () => {
+      savedUser = {
+        id: '507f1f77bcf86cd799439011',
+        email: 'student@example.com',
+        fullName: 'Student Name',
+        passwordHash: await bcrypt.hash('OldPassword123', 12),
+        role: 'STUDENT',
+        authVersion: 0,
+      };
+
+      // 1. Request reset
+      const forgotResponse = await request(app.getHttpServer())
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'student@example.com' })
+        .expect(200);
+
+      expect(forgotResponse.body).toHaveProperty('message');
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'student@example.com',
+        expect.any(String),
+      );
+
+      const sentToken = mailService.sendPasswordResetEmail.mock.calls[0][1];
+
+      // 2. Reset password
+      const resetResponse = await request(app.getHttpServer())
+        .post('/api/v1/auth/reset-password')
+        .send({
+          email: 'student@example.com',
+          token: sentToken,
+          newPassword: 'NewSecretPassword123',
+        })
+        .expect(200);
+
+      expect(resetResponse.body).toHaveProperty('message');
+      expect(
+        await bcrypt.compare('NewSecretPassword123', savedUser.passwordHash),
+      ).toBe(true);
+      expect(savedUser.authVersion).toBe(1);
+
+      // 3. Token cannot be reused
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/reset-password')
+        .send({
+          email: 'student@example.com',
+          token: sentToken,
+          newPassword: 'AnotherPassword123',
+        })
+        .expect(400);
+    });
+
+    it('returns 200 message for non-existent email to prevent enumeration', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'nonexistent@example.com' })
+        .expect(200);
+
+      expect(response.body).toHaveProperty('message');
+      expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('rejects expired reset token', async () => {
+      savedUser = {
+        id: '507f1f77bcf86cd799439011',
+        email: 'student@example.com',
+        passwordHash: 'oldHash',
+      };
+      const token = 'expiredtoken123';
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      passwordResetTokens.set(tokenHash, {
+        tokenHash,
+        email: 'student@example.com',
+        expiresAt: new Date(Date.now() - 1000), // Expired 1 second ago
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/reset-password')
+        .send({
+          email: 'student@example.com',
+          token,
+          newPassword: 'NewPassword123',
+        })
+        .expect(400);
+    });
   });
 });
