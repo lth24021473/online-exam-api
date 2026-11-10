@@ -2,6 +2,8 @@
 
 Tài liệu này tổng hợp toàn bộ kiến trúc hệ thống, luồng nghiệp vụ end-to-end của nền tảng thi trắc nghiệm trực tuyến (**Online Exam System**), bao gồm các phân hệ **đã hoàn thiện** (Core & Pha 1/Mở rộng) và các phân hệ **dự kiến xây dựng bổ sung** (Pha 2 & Tối ưu hóa).
 
+> 📌 **Xem chi tiết danh sách nhiệm vụ & tiến độ triển khai:** [Kế hoạch & Nhiệm vụ chi tiết (Tasks Roadmap)](tasks-roadmap.md)
+
 ---
 
 ## 1. Sơ Đồ Kiến Trúc Tổng Thể (System Architecture Diagram)
@@ -415,4 +417,34 @@ erDiagram
         datetime updatedAt
     }
 ```
+
+---
+
+## 7. Danh Sách Nhiệm Vụ & Lộ Trình Triển Khai (Tasks Roadmap)
+
+> 📑 **Tài liệu chi tiết kỹ thuật từng task:** [Kế hoạch & Nhiệm vụ chi tiết (Tasks Roadmap)](tasks-roadmap.md)
+
+### Bảng Theo Dõi Tiến Độ Tổng Quan (Progress Tracker)
+
+| Mã Task | Tên Nhiệm vụ | Phạm vi | Trạng thái | Ghi chú chính |
+| :--- | :--- | :--- | :---: | :--- |
+| **`TASK-01`** | **Khép kín luồng Quên / Đặt lại mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | Nodemailer SMTP, Token 15p, băm bcrypt, tăng `authVersion`, UI 2 bước |
+| **`CORE-01`** | **Chính sách Quyền Admin: Không xóa User** | Backend & Frontend | ✅ **Hoàn thành** | Đã xóa `DELETE /admin/users/:id` khỏi Swagger, Controller & UI |
+| **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ⏳ *Sẵn sàng làm* | `PATCH /users/me`, `POST /auth/change-password` |
+| **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cặp đôi AccessToken/RefreshToken, Axios Interceptor bắt 401 |
+| **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cron 10s chốt bài tự động, bỏ vòng lặp `while(true)` results |
+| **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ⏳ *Chờ xử lý* | Interface `GradingStrategy` linh hoạt cho nhiều dạng câu hỏi |
+| **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |
+| **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ⏳ *Chờ xử lý* | Random permutation mapping riêng cho từng học sinh |
+| **`TASK-08`** | **Giám sát Trình duyệt (Tab switch, Fullscreen)** | Backend & Frontend | ⏳ *Chờ xử lý* | Ghi nhận `AttemptViolation`, cảnh báo popup giật cấp |
+| **`TASK-09`** | **Đa dạng hóa câu hỏi (Nhiều đáp án, Đúng/Sai)** | Backend & Frontend | ⏳ *Chờ xử lý* | Enum `QuestionType`, Partial credit chấm điểm từng phần |
+| **`TASK-10`** | **Công thức Toán KaTeX & Code Lập trình** | Frontend | ⏳ *Chờ xử lý* | Render LaTeX `$ ... $`, highlight cú pháp mã nguồn |
+| **`TASK-11`** | **Giới hạn số lượt thi (`maxAttempts`) & Khung giờ** | Backend & Frontend | ⏳ *Chờ xử lý* | Chặn làm lại quá giới hạn, mở/đóng theo khung giờ |
+| **`TASK-12`** | **Tích hợp Redis Caching (Cache-Aside)** | Backend | ⏳ *Chờ xử lý* | Cache danh sách đề thi, RevokedToken Set tra cứu $O(1)$ |
+| **`TASK-13`** | **Upload Ảnh/Tệp lên Object Storage (Valet Key)** | Backend & Frontend | ⏳ *Chờ xử lý* | MinIO/S3 Pre-signed URL, tải ảnh trực tiếp từ client |
+| **`TASK-14`** | **Quản lý Lớp học (Classrooms & Members)** | Backend & Frontend | ⏳ *Chờ xử lý* | Mã lớp 6 ký tự, mật khẩu lớp, duyệt thành viên |
+| **`TASK-15`** | **Giao Đề thi theo Lớp (Assignments & Tasks)** | Backend & Frontend | ⏳ *Chờ xử lý* | Tab Nhiệm vụ trong Profile, đề thi cô lập theo lớp |
+| **`TASK-16`** | **Giám sát Phòng thi Trực tiếp (WebSocket)** | Backend & Frontend | ⏳ *Chờ xử lý* | Socket.io Live Proctoring, trạng thái thí sinh realtime |
+| **`TASK-17`** | **Xuất Bảng điểm Excel & Import Đề từ Word/Excel**| Backend & Frontend | ⏳ *Chờ xử lý* | `exceljs`, `mammoth` nạp nhanh 50 câu trắc nghiệm |
+
 

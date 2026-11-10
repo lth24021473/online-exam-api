@@ -62,7 +62,7 @@ Xóa vĩnh viễn áp dụng cho DRAFT/PUBLISHED/CLOSED, chỉ chủ đề hoặ
 
 API results nhận `page` mặc định 1, `limit` mặc định 10 (tối đa 100), `status` tùy chọn IN_PROGRESS/SUBMITTED/CANCELLED; trả `{ exam, data, meta, summary }`. Điểm/số đúng/sai lấy từ dữ liệu backend đã chấm. Thống kê summary tính trên toàn đề, độc lập bộ lọc/trang; chưa có bài nộp thì điểm trung bình/cao nhất/thấp nhất là null. Bài hết giờ được chốt/chấm trước khi người quản lý xem kết quả. ID/query không hợp lệ trả 400; sai quyền hoặc không sở hữu đề trả 403.
 
-Frontend có các trang `/manage/exams`, `/manage/exams/:examId` và `/manage/exams/:examId/results`; EXAM_MANAGER/ADMIN vào **Quản lý đề** trên thanh điều hướng. Chi tiết luồng demo và kiểm chứng: [Pha 1](docs/phase-1.md).
+Frontend có các trang `/manage/exams`, `/manage/exams/:examId` và `/manage/exams/:examId/results`; EXAM_MANAGER/ADMIN vào **Quản lý đề** trên thanh điều hướng. Chi tiết luồng demo, kiến trúc và lộ trình triển khai: [Pha 1](docs/phase-1.md) • [Kiến trúc hệ thống](docs/system-architecture.md) • [Danh sách nhiệm vụ (Tasks Roadmap)](docs/tasks-roadmap.md).
 
 ## Luồng làm bài của học sinh
 

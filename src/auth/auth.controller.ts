@@ -25,6 +25,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -87,5 +88,24 @@ export class AuthController {
   })
   resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.authService.resetPassword(resetPasswordDto);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change password for the authenticated account' })
+  @ApiOkResponse({ description: 'Password changed successfully' })
+  @ApiBadRequestResponse({
+    description: 'Current password incorrect or invalid new password',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing, invalid, expired or revoked token',
+  })
+  changePassword(
+    @Req() request: AuthenticatedRequest,
+    @Body() changePasswordDto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(request.user.id, changePasswordDto);
   }
 }
