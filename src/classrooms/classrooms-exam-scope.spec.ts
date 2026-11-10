@@ -8,10 +8,12 @@ import { AttemptsService } from '../attempts/attempts.service';
 import { AttemptsRepository } from '../attempts/attempts.repository';
 import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 
+type MockType<T> = { [P in keyof T]?: jest.Mock };
+
 describe('Classrooms & Exam Scope Isolation', () => {
   describe('Exam Scope Filtering in ExamsRepository / ExamsService', () => {
     let examsService: ExamsService;
-    let mockExamsRepo: jest.Mocked<Partial<ExamsRepository>>;
+    let mockExamsRepo: MockType<ExamsRepository>;
 
     beforeEach(() => {
       mockExamsRepo = {
@@ -149,7 +151,7 @@ describe('Classrooms & Exam Scope Isolation', () => {
 
   describe('AttemptsService Class Exam Scope Isolation', () => {
     let attemptsService: AttemptsService;
-    let mockAttemptsRepo: jest.Mocked<Partial<AttemptsRepository>>;
+    let mockAttemptsRepo: MockType<AttemptsRepository>;
 
     beforeEach(() => {
       mockAttemptsRepo = {
@@ -225,8 +227,8 @@ describe('Classrooms & Exam Scope Isolation', () => {
 
   describe('ClassroomsController Security & Endpoints', () => {
     let controller: ClassroomsController;
-    let mockClassroomsService: jest.Mocked<Partial<ClassroomsService>>;
-    let mockExamsService: jest.Mocked<Partial<ExamsService>>;
+    let mockClassroomsService: MockType<ClassroomsService>;
+    let mockExamsService: MockType<ExamsService>;
 
     beforeEach(() => {
       mockClassroomsService = {

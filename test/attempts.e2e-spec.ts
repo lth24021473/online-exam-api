@@ -159,6 +159,8 @@ class InMemoryAttemptsRepository {
       score: null,
       correctCount: null,
       incorrectCount: null,
+      violationCount: 0,
+      terminatedReason: null,
       exam: { id: EXAM_ID, title: this.exam.title },
     };
     this.attempts.set(id, attempt);

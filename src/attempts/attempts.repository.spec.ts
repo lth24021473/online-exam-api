@@ -24,7 +24,14 @@ describe('AttemptsRepository write conflict retries', () => {
     totalQuestions: 1,
     correctCount: null,
     incorrectCount: null,
-    exam: { id: 'exam-id', title: 'Example exam' },
+    violationCount: 0,
+    terminatedReason: null,
+    exam: {
+      id: 'exam-id',
+      title: 'Example exam',
+      enableProctoring: true,
+      maxViolations: 3,
+    },
   };
   const answer = {
     questionId: 'question-id',

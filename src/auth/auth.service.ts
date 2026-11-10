@@ -7,7 +7,7 @@ import {
 import { Prisma, User } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { TokenRevocationService } from './token-revocation.service';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../database/prisma.service';

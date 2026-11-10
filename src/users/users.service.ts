@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { UsersRepository } from './users.repository';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -33,6 +34,17 @@ export class UsersService {
 
   async updateRole(id: string, role: Role) {
     return this.usersRepository.updateRole(id, role);
+  }
+
+  async updateProfile(id: string, dto: UpdateProfileDto) {
+    await this.findPublicUserOrFail(id);
+    const updated = await this.usersRepository.updateProfile(id, dto);
+    const {
+      passwordHash: _passwordHash,
+      authVersion: _authVersion,
+      ...publicUser
+    } = updated;
+    return publicUser;
   }
 
   async getPublicUserById(id: string) {
