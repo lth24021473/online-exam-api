@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma, User } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
@@ -18,6 +18,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @Injectable()
 export class AuthService {
@@ -244,16 +245,95 @@ export class AuthService {
     };
   }
 
+  async refresh(dto: RefreshTokenDto) {
+    if (!dto?.refreshToken || typeof dto.refreshToken !== 'string') {
+      throw new UnauthorizedException('Refresh token is required');
+    }
+
+    let payload: {
+      sub: string;
+      exp: number;
+      email: string;
+      role: Role;
+      authVersion?: number;
+      tokenType?: string;
+    };
+
+    try {
+      payload = await this.jwtService.verifyAsync(dto.refreshToken, {
+        algorithms: ['HS256'],
+      });
+      if (
+        typeof payload.sub !== 'string' ||
+        !/^[a-f\d]{24}$/i.test(payload.sub) ||
+        typeof payload.email !== 'string' ||
+        !payload.email ||
+        !Object.values(Role).includes(payload.role) ||
+        !Number.isFinite(payload.exp) ||
+        (payload.authVersion !== undefined &&
+          (!Number.isSafeInteger(payload.authVersion) ||
+            payload.authVersion < 0))
+      ) {
+        throw new Error('Invalid token claims');
+      }
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    if (payload.tokenType !== 'refresh') {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (await this.revocations.isRevoked(dto.refreshToken)) {
+      throw new UnauthorizedException('Refresh token has been revoked');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Account no longer exists');
+    }
+
+    if (
+      user.role !== payload.role ||
+      (user.authVersion ?? 0) !== (payload.authVersion ?? 0)
+    ) {
+      throw new UnauthorizedException(
+        'Account permissions have changed. Please sign in again',
+      );
+    }
+
+    return this.createAuthResponse(user);
+  }
+
   private async createAuthResponse(user: User) {
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       authVersion: user.authVersion ?? 0,
+      tokenType: 'access',
       jti: randomUUID(),
     };
 
-    const accessToken = await this.jwtService.signAsync(payload);
+    const refreshPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      authVersion: user.authVersion ?? 0,
+      tokenType: 'refresh',
+      jti: randomUUID(),
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: 15 * 60, // 15 minutes
+    });
+
+    const refreshToken = await this.jwtService.signAsync(refreshPayload, {
+      expiresIn: 7 * 24 * 60 * 60, // 7 days
+    });
 
     const {
       passwordHash: _passwordHash,
@@ -263,6 +343,7 @@ export class AuthService {
 
     return {
       accessToken,
+      refreshToken,
       user: safeUser,
     };
   }

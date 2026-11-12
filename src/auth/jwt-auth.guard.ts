@@ -36,6 +36,7 @@ export class JwtAuthGuard implements CanActivate {
       email: string;
       role: Role;
       authVersion?: number;
+      tokenType?: string;
     };
     try {
       payload = await this.jwtService.verifyAsync(token, {
@@ -56,6 +57,11 @@ export class JwtAuthGuard implements CanActivate {
       }
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
+    }
+    if (payload.tokenType === 'refresh') {
+      throw new UnauthorizedException(
+        'Refresh token cannot be used as access token',
+      );
     }
     if (await this.revocations.isRevoked(token)) {
       throw new UnauthorizedException('Token has been revoked');

@@ -332,6 +332,21 @@ describe('Authentication HTTP flow', () => {
       .send({ email: registration.email, password: registration.password })
       .expect(200);
     expect(login.body.user).toEqual(response.body.user);
+    expect(login.body.refreshToken).toEqual(expect.any(String));
+
+    const refreshed = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: login.body.refreshToken })
+      .expect(200);
+    expect(refreshed.body.accessToken).toEqual(expect.any(String));
+    expect(refreshed.body.refreshToken).toEqual(expect.any(String));
+    expect(refreshed.body.user.email).toBe('student@example.com');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: 'invalid-token' })
+      .expect(401);
+
     await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ email: registration.email, password: 'incorrect' })
