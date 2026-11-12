@@ -26,6 +26,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -50,7 +51,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a student account' })
   @ApiCreatedResponse({
     description:
-      'Student account created; returns accessToken and user without passwordHash',
+      'Student account created; returns accessToken, refreshToken and user without passwordHash',
   })
   @ApiBadRequestResponse({ description: 'Invalid registration data' })
   @ApiConflictResponse({ description: 'Email is already registered' })
@@ -63,8 +64,28 @@ export class AuthController {
   @ApiOperation({
     summary: 'Login to the system',
   })
+  @ApiOkResponse({
+    description:
+      'Login successful; returns accessToken, refreshToken and user without passwordHash',
+  })
+  @ApiUnauthorizedResponse({ description: 'Email or password is incorrect' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using a valid refresh token' })
+  @ApiOkResponse({
+    description:
+      'Token refreshed successfully; returns new accessToken, refreshToken and user',
+  })
+  @ApiBadRequestResponse({ description: 'Invalid refresh token data' })
+  @ApiUnauthorizedResponse({
+    description: 'Invalid, expired, or revoked refresh token',
+  })
+  refresh(@Body() refreshTokenDto: RefreshTokenDto) {
+    return this.authService.refresh(refreshTokenDto);
   }
 
   @Post('forgot-password')

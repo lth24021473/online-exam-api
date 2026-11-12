@@ -430,8 +430,8 @@ erDiagram
 | :--- | :--- | :--- | :---: | :--- |
 | **`TASK-01`** | **Khép kín luồng Quên / Đặt lại mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | Nodemailer SMTP, Token 15p, băm bcrypt, tăng `authVersion`, UI 2 bước |
 | **`CORE-01`** | **Chính sách Quyền Admin: Không xóa User** | Backend & Frontend | ✅ **Hoàn thành** | Đã xóa `DELETE /admin/users/:id` khỏi Swagger, Controller & UI |
-| **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ⏳ *Sẵn sàng làm* | `PATCH /users/me`, `POST /auth/change-password` |
-| **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cặp đôi AccessToken/RefreshToken, Axios Interceptor bắt 401 |
+| **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | `PATCH /users/me`, `POST /auth/change-password` |
+| **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
 | **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cron 10s chốt bài tự động, bỏ vòng lặp `while(true)` results |
 | **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ⏳ *Chờ xử lý* | Interface `GradingStrategy` linh hoạt cho nhiều dạng câu hỏi |
 | **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |

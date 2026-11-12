@@ -13,8 +13,8 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 | :--- | :--- | :--- | :---: | :--- |
 | **`TASK-01`** | **Khép kín luồng Quên / Đặt lại mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | SMTP, Token 15p, băm bcrypt, tăng `authVersion`, UI 2 bước |
 | **`CORE-01`** | **Chính sách Quyền Admin: Không xóa User** | Backend & Frontend | ✅ **Hoàn thành** | Đã xóa `DELETE /admin/users/:id` khỏi Swagger, Controller & UI |
-| **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ⏳ *Sẵn sàng làm* | `PATCH /users/me`, `POST /auth/change-password` |
-| **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cặp đôi AccessToken/RefreshToken, Axios Interceptor 401 |
+| **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | `PATCH /users/me`, `POST /auth/change-password` |
+| **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
 | **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cron 10s chốt bài, bỏ vòng lặp `while(true)` kết quả |
 | **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ⏳ *Chờ xử lý* | `GradingStrategy` linh hoạt cho nhiều dạng câu hỏi |
 | **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |
@@ -55,7 +55,7 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 *   🎨 **Frontend:** Gỡ bỏ nút "Xóa tài khoản" và dialog xác nhận xóa trong `AdminUsersPage.tsx`, chỉ giữ lại chức năng đổi vai trò (Role assignment).
 *   ✅ **Nghiệm thu:** Swagger UI không còn endpoint `DELETE`, gọi trực tiếp trả `404 Not Found`, 14/14 tests Admin Frontend pass.
 
-#### `TASK-02`: Đồng bộ Hồ sơ cá nhân lên Server & Đổi mật khẩu chủ động
+#### `TASK-02`: Đồng bộ Hồ sơ cá nhân lên Server & Đổi mật khẩu chủ động — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
     *   Bổ sung các trường vào model `User` trong Prisma: `workplace`, `currentResidence`, `avatar`, `cover`.
     *   Viết API `PATCH /api/v1/users/me`: Cập nhật `fullName`, `workplace`, `currentResidence` của tài khoản hiện tại.
@@ -63,16 +63,17 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 *   🎨 **Frontend:**
     *   Tại `src/pages/ProfilePage.tsx`: Chuyển hàm `handleProfileSave` từ lưu `localStorage` sang gọi API `PATCH /users/me`.
     *   Tạo Modal/Form **"Đổi mật khẩu"**: Gồm 3 ô (Mật khẩu hiện tại, Mật khẩu mới, Xác nhận mật khẩu mới) gắn vào tab Chỉnh sửa tài khoản hoặc Cài đặt.
-*   ✅ **Nghiệm thu:** Đổi tên/nơi làm việc ở máy tính A, đăng nhập máy tính B dữ liệu vẫn được lưu nguyên vẹn; đổi được mật khẩu chủ động an toàn.
+*   ✅ **Nghiệm thu:** Đổi tên/nơi làm việc ở máy tính A, đăng nhập máy tính B dữ liệu vẫn được lưu nguyên vẹn; đổi được mật khẩu chủ động an toàn; 8/8 tests ChangePassword & 4/4 tests UsersService pass.
 
-#### `TASK-03`: Cơ chế Tự động gia hạn Token (Silent Refresh Token)
+#### `TASK-03`: Cơ chế Tự động gia hạn Token (Silent Refresh Token) — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
     *   Sửa API `/auth/login` và `/auth/register`: Cấp cặp đôi `accessToken` (hạn 15 phút) và `refreshToken` (hạn 7 ngày).
-    *   Tạo API `POST /api/v1/auth/refresh`: Nhận `refreshToken`, kiểm tra tính hợp lệ và cấp mới `accessToken`.
+    *   Tạo API `POST /api/v1/auth/refresh`: Nhận `refreshToken`, kiểm tra tính hợp lệ và cấp mới `accessToken`, `refreshToken` và `user`.
+    *   `JwtAuthGuard` chủ động chặn việc dùng nhầm `refreshToken` trên các API nghiệp vụ yêu cầu `accessToken`.
 *   🎨 **Frontend:**
     *   Tại `src/api/axios.ts`: Cấu hình Axios Interceptor bắt mã lỗi `401`.
     *   Tự động gọi ngầm `/auth/refresh` lấy token mới rồi gửi lại request cũ mà người dùng không hề hay biết (không bị đá văng ra login khi đang làm bài).
-*   ✅ **Nghiệm thu:** Khi access token hết hạn giữa chừng, học sinh vẫn tiếp tục làm bài bình thường không bị gián đoạn phiên.
+*   ✅ **Nghiệm thu:** Cấp cặp Access Token (15m) & Refresh Token (7d); API `POST /auth/refresh` gia hạn token tự động; JwtAuthGuard chặn lạm dụng token; 15/15 unit tests pass.
 
 ---
 
