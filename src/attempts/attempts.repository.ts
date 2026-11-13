@@ -178,14 +178,17 @@ export class AttemptsRepository {
     });
   }
 
-  findExpiredForExam(examId: string, take: number) {
+  findExpired(take = 50, excludeIds: string[] = []) {
+    if (!this.prisma?.attempt) {
+      return Promise.resolve([]);
+    }
     return this.prisma.attempt.findMany({
       where: {
-        examId,
         status: AttemptStatus.IN_PROGRESS,
         deadlineAt: { lte: new Date() },
+        ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
       },
-      orderBy: { id: 'asc' },
+      orderBy: { deadlineAt: 'asc' },
       take,
       include: { exam: examInfo },
     });

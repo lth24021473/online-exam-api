@@ -10,14 +10,10 @@ import { CreateExamDto } from './dto/create-exam.dto';
 import { UpdateExamDto } from './dto/update-exam.dto';
 import { ReopenExamDto } from './dto/reopen-exam.dto';
 import { ExamResultsQueryDto } from './dto/exam-results-query.dto';
-import { AttemptsService } from '../attempts/attempts.service';
 
 @Injectable()
 export class ExamsService {
-  constructor(
-    private readonly examsRepository: ExamsRepository,
-    private readonly attemptsService: AttemptsService,
-  ) {}
+  constructor(private readonly examsRepository: ExamsRepository) {}
 
   async findOneOrFail(id: string) {
     const exam = await this.examsRepository.findById(id);
@@ -192,7 +188,6 @@ export class ExamsService {
   ) {
     const exam = await this.findOneOrFail(id);
     this.assertOwner(exam, userId, role);
-    await this.attemptsService.finalizeExpiredForExam(id);
     return {
       exam: {
         id: exam.id,

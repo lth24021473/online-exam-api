@@ -15,7 +15,6 @@ import { QuestionsRepository } from '../src/exams/questions/questions.repository
 import { QuestionsService } from '../src/exams/questions/questions.service';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/roles.guard';
-import { AttemptsService } from '../src/attempts/attempts.service';
 
 const MANAGER = '111111111111111111111111';
 const OTHER = '222222222222222222222222';
@@ -26,9 +25,6 @@ const OPTIONS = ['555555555555555555555555', '666666666666666666666666'];
 /** Authentication is replaced here; controllers, DTOs, role checks and services run. */
 describe('Exam management HTTP validation and authorization', () => {
   let app: INestApplication;
-  const attempts = {
-    finalizeExpiredForExam: jest.fn().mockResolvedValue(undefined),
-  };
   const exams = {
     findById: jest.fn(),
     create: jest.fn(),
@@ -78,7 +74,6 @@ describe('Exam management HTTP validation and authorization', () => {
         RolesGuard,
         { provide: ExamsRepository, useValue: exams },
         { provide: QuestionsRepository, useValue: questions },
-        { provide: AttemptsService, useValue: attempts },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -132,7 +127,6 @@ describe('Exam management HTTP validation and authorization', () => {
     exams.findById.mockResolvedValue({ ...exam(), managerId: OTHER });
     await get(`/exams/${EXAM}/results`).expect(403);
     expect(exams.listResults).not.toHaveBeenCalled();
-    expect(attempts.finalizeExpiredForExam).not.toHaveBeenCalled();
   });
   it('allows ADMIN to view another manager result set and validates defaults', async () => {
     exams.findById.mockResolvedValue({ ...exam(), managerId: OTHER });
