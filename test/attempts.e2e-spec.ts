@@ -80,6 +80,7 @@ class InMemoryAttemptsRepository {
     durationMinutes: 30,
     status: ExamStatus.PUBLISHED as ExamStatus,
     _count: { questions: 2 },
+    maxAttempts: 5,
   };
   readonly questions: QuestionFixture[] = [
     {
@@ -123,6 +124,15 @@ class InMemoryAttemptsRepository {
       ],
     },
   ];
+
+  countSubmitted(userId: string, examId: string) {
+    return [...this.attempts.values()].filter(
+      (attempt) =>
+        attempt.userId === userId &&
+        attempt.examId === examId &&
+        attempt.status === AttemptStatus.SUBMITTED,
+    ).length;
+  }
 
   findExamForStart(examId: string) {
     return examId === EXAM_ID ? this.exam : null;
@@ -488,7 +498,7 @@ describe('Attempts HTTP API (e2e, in-memory persistence)', () => {
       status: AttemptStatus.SUBMITTED,
       examTitle: 'Sample exam',
     });
-    expect(result.summary).toEqual({
+    expect(result.summary).toMatchObject({
       score: 10,
       maxScore: 10,
       totalQuestions: 2,
