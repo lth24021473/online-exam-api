@@ -173,6 +173,20 @@ class InMemoryAttemptsRepository {
     return attempt ? { ...attempt } : null;
   }
 
+  findExpired(take = 50, excludeIds: string[] = []) {
+    const now = Date.now();
+    return [...this.attempts.values()]
+      .filter(
+        (attempt) =>
+          attempt.status === AttemptStatus.IN_PROGRESS &&
+          attempt.deadlineAt.getTime() <= now &&
+          !excludeIds.includes(attempt.id),
+      )
+      .sort((a, b) => a.deadlineAt.getTime() - b.deadlineAt.getTime())
+      .slice(0, take)
+      .map((attempt) => ({ ...attempt }));
+  }
+
   listQuestions(examId: string) {
     return this.questions
       .filter((question) => question.examId === examId)

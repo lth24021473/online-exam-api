@@ -175,6 +175,7 @@ model Attempt {
 
   @@index([userId, startedAt])
   @@index([examId, status])
+  @@index([status, deadlineAt])
 }
 
 model AttemptViolation {

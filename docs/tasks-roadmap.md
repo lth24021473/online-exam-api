@@ -15,7 +15,7 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 | **`CORE-01`** | **Chính sách Quyền Admin: Không xóa User** | Backend & Frontend | ✅ **Hoàn thành** | Đã xóa `DELETE /admin/users/:id` khỏi Swagger, Controller & UI |
 | **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | `PATCH /users/me`, `POST /auth/change-password` |
 | **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
-| **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cron 10s chốt bài, bỏ vòng lặp `while(true)` kết quả |
+| **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ✅ **Hoàn thành** | `@nestjs/schedule` Cron 10s `AttemptSchedulerService`, bỏ `while(true)` ở `GET /exams/:id/results`, UI auto-submit khi hết giờ |
 | **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ⏳ *Chờ xử lý* | `GradingStrategy` linh hoạt cho nhiều dạng câu hỏi |
 | **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |
 | **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ⏳ *Chờ xử lý* | Random permutation mapping cho từng học sinh |
@@ -79,15 +79,15 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 
 ### 📌 MODULE 2: HẠ TẦNG THI & CHỐNG NGHẼN (EXAM CORE & RESILIENCY)
 
-#### `TASK-04`: Tiến trình Worker tự động chốt bài thi quá hạn (Background Auto-finalizer)
+#### `TASK-04`: Tiến trình Worker tự động chốt bài thi quá hạn (Background Auto-finalizer) — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Cài đặt `@nestjs/schedule` và kích hoạt trong `AppModule`.
+    *   Cài đặt `@nestjs/schedule` và kích hoạt `ScheduleModule.forRoot()` trong `AppModule`.
     *   Tạo service `AttemptSchedulerService` chạy Cron định kỳ mỗi 10 giây (`@Cron('*/10 * * * * *')`).
-    *   Tự động quét các `Attempt` có `status = IN_PROGRESS` và `deadlineAt <= now()` $\rightarrow$ tự động tính điểm và chuyển sang `SUBMITTED`.
-    *   **Loại bỏ hoàn toàn** vòng lặp `while(true)` chốt lười trong API `GET /exams/:id/results`.
+    *   Tự động quét các `Attempt` có `status = IN_PROGRESS` và `deadlineAt <= now()` (kèm index `[status, deadlineAt]`) $\rightarrow$ tự động tính điểm và chuyển sang `SUBMITTED`.
+    *   **Loại bỏ hoàn toàn** vòng lặp `while(true)` chốt lười (`finalizeExpiredForExam`) trong API `GET /exams/:id/results`.
 *   🎨 **Frontend:**
     *   Tại `src/pages/TakeExamPage.tsx`: Khi đồng hồ đếm ngược về `00:00:00`, khóa toàn bộ tương tác, hiển thị popup: *"Đã hết giờ làm bài! Hệ thống đang tự động thu bài và tính điểm..."*, sau đó tự động chuyển hướng sang trang kết quả `/attempts/:id/result`.
-*   ✅ **Nghiệm thu:** Học sinh tắt máy/mất mạng khi hết giờ thì bài thi vẫn tự động được chấm trên server đúng từng giây.
+*   ✅ **Nghiệm thu:** Học sinh tắt máy/mất mạng khi hết giờ thì bài thi vẫn tự động được chấm trên server đúng từng giây; Frontend tự động khóa làm bài và điều hướng mượt mà sang trang kết quả khi hết thời gian; 8/8 tests scheduler & 134/134 unit tests pass.
 
 #### `TASK-05`: Tách thuật toán Chấm điểm (Strategy Pattern)
 *   ⚙️ **Backend:**

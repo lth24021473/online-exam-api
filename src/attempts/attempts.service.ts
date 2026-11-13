@@ -198,25 +198,9 @@ export class AttemptsService {
     return this.buildResult(attempt);
   }
 
-  /** Used after an exam manager's ownership/role check, before reading results. */
-  async finalizeExpiredForExam(examId: string) {
-    for (;;) {
-      const expired = await this.repo.findExpiredForExam(examId, 50);
-      if (expired.length === 0) return;
-      for (const attempt of expired) {
-        try {
-          await this.finalize(attempt);
-        } catch (error) {
-          if (error instanceof ConflictException) {
-            const current = await this.repo.findById(attempt.id);
-            if (!current || current.status !== AttemptStatus.IN_PROGRESS) {
-              continue;
-            }
-          }
-          throw error;
-        }
-      }
-    }
+  /** Finalize a single expired attempt (used by the background auto-finalizer). */
+  async finalizeExpiredAttempt(attempt: Attempt) {
+    return this.finalize(attempt);
   }
 
   async getHistory(
