@@ -124,6 +124,9 @@ export class ExamsService {
       if (dto.durationMinutes !== undefined) updateData.durationMinutes = dto.durationMinutes;
       return this.examsRepository.update(id, updateData, ExamStatus.DRAFT);
     }
+    if (dto.durationMinutes !== undefined) {
+      throw new BadRequestException('Duration cannot be modified after publish');
+    }
     return this.examsRepository.update(id, updateData, exam.status);
   }
 

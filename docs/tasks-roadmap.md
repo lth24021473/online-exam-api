@@ -16,7 +16,7 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 | **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | `PATCH /users/me`, `POST /auth/change-password` |
 | **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
 | **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ✅ **Hoàn thành** | `@nestjs/schedule` Cron 10s `AttemptSchedulerService`, bỏ `while(true)` ở `GET /exams/:id/results`, UI auto-submit khi hết giờ |
-| **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ⏳ *Chờ xử lý* | `GradingStrategy` linh hoạt cho nhiều dạng câu hỏi |
+| **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ✅ **Hoàn thành** | `GradingStrategy` & `StandardGradingStrategy`, DI vào `AttemptsService` |
 | **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |
 | **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ⏳ *Chờ xử lý* | Random permutation mapping cho từng học sinh |
 | **`TASK-08`** | **Giám sát Trình duyệt (Tab switch, Fullscreen)** | Backend & Frontend | ⏳ *Chờ xử lý* | Ghi nhận `AttemptViolation`, cảnh báo popup |
@@ -89,13 +89,13 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
     *   Tại `src/pages/TakeExamPage.tsx`: Khi đồng hồ đếm ngược về `00:00:00`, khóa toàn bộ tương tác, hiển thị popup: *"Đã hết giờ làm bài! Hệ thống đang tự động thu bài và tính điểm..."*, sau đó tự động chuyển hướng sang trang kết quả `/attempts/:id/result`.
 *   ✅ **Nghiệm thu:** Học sinh tắt máy/mất mạng khi hết giờ thì bài thi vẫn tự động được chấm trên server đúng từng giây; Frontend tự động khóa làm bài và điều hướng mượt mà sang trang kết quả khi hết thời gian; 8/8 tests scheduler & 134/134 unit tests pass.
 
-#### `TASK-05`: Tách thuật toán Chấm điểm (Strategy Pattern)
+#### `TASK-05`: Tách thuật toán Chấm điểm (Strategy Pattern) — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Tạo interface `GradingStrategy` với phương thức `calculateScore(questions, answers)`.
-    *   Cài đặt `StandardGradingStrategy` (công thức chia đều điểm hiện tại).
-    *   Inject Strategy vào `AttemptsService` thay cho đoạn code hardcode hiện tại, sẵn sàng cho việc mở rộng các dạng chấm điểm khác ở Pha 2 (điểm trừ, partial credit).
+    *   Tạo interface `GradingStrategy` với phương thức `calculateScore(questions, answers, totalQuestions?)`.
+    *   Cài đặt `StandardGradingStrategy` (công thức chia đều điểm hiện tại, validation 1 đáp án đúng).
+    *   Inject Strategy vào `AttemptsService` thay cho đoạn code hardcode trước đây, sẵn sàng cho việc mở rộng các dạng chấm điểm khác ở Pha 2 (điểm trừ, partial credit).
 *   🎨 **Frontend:** Không ảnh hưởng giao diện.
-*   ✅ **Nghiệm thu:** Toàn bộ test suite chấm điểm hiện tại (`npm run test:e2e`) vẫn pass 100%.
+*   ✅ **Nghiệm thu:** 10/10 tests `StandardGradingStrategy`, 4/4 tests `AttemptsService - Grading Strategy Integration`, 16/16 tests `attempts.e2e-spec.ts` pass 100%.
 
 #### `TASK-06`: Bảo vệ API với Rate Limiting & Giám sát Sức khỏe Container
 *   ⚙️ **Backend:**
