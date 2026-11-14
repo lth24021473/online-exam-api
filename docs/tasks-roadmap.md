@@ -17,7 +17,7 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 | **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
 | **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ✅ **Hoàn thành** | `@nestjs/schedule` Cron 10s `AttemptSchedulerService`, bỏ `while(true)` ở `GET /exams/:id/results`, UI auto-submit khi hết giờ |
 | **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ✅ **Hoàn thành** | `GradingStrategy` & `StandardGradingStrategy`, DI vào `AttemptsService` |
-| **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |
+| **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ✅ **Hoàn thành** | Throttler chống brute-force, Terminus `/health/live`, `/health/ready` (ping MongoDB) |
 | **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ⏳ *Chờ xử lý* | Random permutation mapping cho từng học sinh |
 | **`TASK-08`** | **Giám sát Trình duyệt (Tab switch, Fullscreen)** | Backend & Frontend | ⏳ *Chờ xử lý* | Ghi nhận `AttemptViolation`, cảnh báo popup |
 | **`TASK-09`** | **Đa dạng hóa câu hỏi (Nhiều đáp án, Đúng/Sai)** | Backend & Frontend | ⏳ *Chờ xử lý* | Enum `QuestionType`, Partial credit chấm điểm |
@@ -97,13 +97,13 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 *   🎨 **Frontend:** Không ảnh hưởng giao diện.
 *   ✅ **Nghiệm thu:** 10/10 tests `StandardGradingStrategy`, 4/4 tests `AttemptsService - Grading Strategy Integration`, 16/16 tests `attempts.e2e-spec.ts` pass 100%.
 
-#### `TASK-06`: Bảo vệ API với Rate Limiting & Giám sát Sức khỏe Container
+#### `TASK-06`: Bảo vệ API với Rate Limiting & Giám sát Sức khỏe Container — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Cài đặt `@nestjs/throttler`: Gắn chặn brute-force cho `/auth/login` (tối đa 5 lần/phút) và giới hạn gọi `/attempts/:id/answers/:id` (tối đa 5 lần/giây/user).
-    *   Cài đặt `@nestjs/terminus`: Mở route `/health/live` và `/health/ready` (ping MongoDB).
+    *   Cài đặt `@nestjs/throttler`: Gắn chặn brute-force cho `/auth/login` (tối đa 5 lần/phút) và giới hạn gọi `/attempts/:id/answers/:id` (tối đa 5 lần/giây/user với custom `getUserTracker`).
+    *   Cài đặt `@nestjs/terminus`: Mở route `/health/live` và `/health/ready` (ping MongoDB qua `PrismaHealthIndicator`), hỗ trợ cả route trực tiếp và route qua prefix `/api/v1/health/*`. Cập nhật healthcheck container trong `docker-compose.yml`.
 *   🎨 **Frontend:**
-    *   Bắt lỗi `HTTP 429 Too Many Requests` trong Axios và hiển thị thông báo tiếng Việt: *"Bạn đang thao tác quá nhanh, vui lòng thử lại sau vài giây!"*.
-*   ✅ **Nghiệm thu:** Dùng script spam API lưu đáp án sẽ bị chặn ở request thứ 6; container Docker có thể check health chính xác.
+    *   Bắt lỗi `HTTP 429 Too Many Requests` trong Axios interceptor và hiển thị thông báo tiếng Việt: *"Bạn đang thao tác quá nhanh, vui lòng thử lại sau vài giây!"*.
+*   ✅ **Nghiệm thu:** 3/3 tests `health.controller.spec.ts`, 7/7 tests `health-and-throttler.e2e-spec.ts` pass, 12/12 Playwright tests `axios-client.spec.ts` pass, toàn bộ 151 unit tests và 81 e2e tests backend pass 100%.
 
 ---
 
