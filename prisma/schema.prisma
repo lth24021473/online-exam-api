@@ -170,6 +170,7 @@ model Attempt {
   incorrectCount   Int?
   violationCount   Int                @default(0)
   terminatedReason String?
+  shuffledMapping  Json?
   answers          AttemptAnswer[]
   violations       AttemptViolation[]
 
