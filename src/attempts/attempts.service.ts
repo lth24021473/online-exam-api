@@ -9,6 +9,7 @@ import {
 import { Attempt, AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { RecordViolationDto } from './dto/record-violation.dto';
 import { AttemptsRepository } from './attempts.repository';
+import { isShuffledMapping } from './shuffling';
 import {
   GRADING_STRATEGY,
   StandardGradingStrategy,
@@ -154,26 +155,48 @@ export class AttemptsService {
       questionId,
     );
     if (!question) throw new NotFoundException('Question not found in exam');
-    const option = question.options.find(
-      (o) => o.position === selectedOptionIndex,
-    );
-    if (
-      !Number.isInteger(selectedOptionIndex) ||
-      selectedOptionIndex < 0 ||
-      !option
-    ) {
-      throw new ConflictException('Selected option does not exist');
+
+    let selectedOptionId: string;
+    if (isShuffledMapping(attempt.shuffledMapping)) {
+      const qMap = attempt.shuffledMapping.find(
+        (m) => m.questionId === questionId,
+      );
+      if (
+        !qMap ||
+        !Number.isInteger(selectedOptionIndex) ||
+        selectedOptionIndex < 0 ||
+        selectedOptionIndex >= qMap.optionIds.length
+      ) {
+        throw new ConflictException('Selected option does not exist');
+      }
+      selectedOptionId = qMap.optionIds[selectedOptionIndex];
+      const optionExists = question.options.some((o) => o.id === selectedOptionId);
+      if (!optionExists) {
+        throw new ConflictException('Selected option does not exist');
+      }
+    } else {
+      const option = question.options.find(
+        (o) => o.position === selectedOptionIndex,
+      );
+      if (
+        !Number.isInteger(selectedOptionIndex) ||
+        selectedOptionIndex < 0 ||
+        !option
+      ) {
+        throw new ConflictException('Selected option does not exist');
+      }
+      selectedOptionId = option.id;
     }
 
     const answer = await this.repo.upsertAnswer(
       attemptId,
       userId,
       questionId,
-      option.id,
+      selectedOptionId,
     );
     return {
       questionId: answer.questionId,
-      selectedOptionIndex: answer.selectedOption.position,
+      selectedOptionIndex,
       savedAt: answer.updatedAt,
     };
   }
@@ -272,6 +295,71 @@ export class AttemptsService {
       this.repo.listQuestions(attempt.examId),
       this.repo.listAnswers(attempt.id),
     ]);
+
+    let sessionQuestions: {
+      id: string;
+      content: string;
+      position: number;
+      options: string[];
+    }[];
+
+    let sessionAnswers: {
+      questionId: string;
+      selectedOptionIndex: number;
+    }[];
+
+    if (isShuffledMapping(attempt.shuffledMapping)) {
+      const mapping = attempt.shuffledMapping;
+      const questionDict = new Map(questions.map((q) => [q.id, q]));
+
+      sessionQuestions = mapping
+        .map((m, index) => {
+          const q = questionDict.get(m.questionId);
+          if (!q) return null;
+          const optDict = new Map(q.options.map((o) => [o.id, o]));
+          const shuffledOptions = m.optionIds
+            .map((optId) => optDict.get(optId)?.content)
+            .filter((c): c is string => c !== undefined);
+
+          return {
+            id: q.id,
+            content: q.content,
+            position: index + 1,
+            options: shuffledOptions,
+          };
+        })
+        .filter((q): q is NonNullable<typeof q> => q !== null);
+
+      const mappingDict = new Map(
+        mapping.map((m) => [m.questionId, m.optionIds]),
+      );
+
+      sessionAnswers = answers.map(
+        ({ questionId, selectedOptionId, selectedOption }) => {
+          const optionIds = mappingDict.get(questionId);
+          if (optionIds) {
+            const index = optionIds.indexOf(selectedOptionId);
+            if (index !== -1) {
+              return { questionId, selectedOptionIndex: index };
+            }
+          }
+          return { questionId, selectedOptionIndex: selectedOption.position };
+        },
+      );
+    } else {
+      sessionQuestions = questions.map((q) => ({
+        id: q.id,
+        content: q.content,
+        position: q.position,
+        options: q.options.map((o) => o.content),
+      }));
+
+      sessionAnswers = answers.map(({ questionId, selectedOption }) => ({
+        questionId,
+        selectedOptionIndex: selectedOption.position,
+      }));
+    }
+
     return {
       attempt: {
         id: attempt.id,
@@ -291,16 +379,8 @@ export class AttemptsService {
         enableProctoring: exam.enableProctoring ?? true,
         maxViolations: exam.maxViolations ?? 3,
       },
-      questions: questions.map((q) => ({
-        id: q.id,
-        content: q.content,
-        position: q.position,
-        options: q.options.map((o) => o.content),
-      })),
-      answers: answers.map(({ questionId, selectedOption }) => ({
-        questionId,
-        selectedOptionIndex: selectedOption.position,
-      })),
+      questions: sessionQuestions,
+      answers: sessionAnswers,
     };
   }
 
@@ -339,6 +419,74 @@ export class AttemptsService {
       answers.map((a) => [a.questionId, a.selectedOptionId]),
     );
 
+    let resultQuestions: {
+      id: string;
+      position: number;
+      content: string;
+      options: string[];
+      selectedOptionIndex: number | null;
+      correctOptionIndex: number | null;
+      isCorrect: boolean;
+    }[];
+
+    if (isShuffledMapping(attempt.shuffledMapping)) {
+      const mapping = attempt.shuffledMapping;
+      const questionDict = new Map(questions.map((q) => [q.id, q]));
+
+      resultQuestions = mapping
+        .map((m, index) => {
+          const q = questionDict.get(m.questionId);
+          if (!q) return null;
+          const optDict = new Map(q.options.map((o) => [o.id, o]));
+          const selectedOptionId = selected.get(q.id);
+          const correctOption = q.options.find((o) => o.isCorrect);
+
+          const shuffledOptions = m.optionIds
+            .map((optId) => optDict.get(optId))
+            .filter((o): o is NonNullable<typeof o> => o !== undefined);
+
+          const selectedOptionIndex = selectedOptionId
+            ? m.optionIds.indexOf(selectedOptionId)
+            : -1;
+          const correctOptionIndex = correctOption
+            ? m.optionIds.indexOf(correctOption.id)
+            : -1;
+
+          return {
+            id: q.id,
+            position: index + 1,
+            content: q.content,
+            options: shuffledOptions.map((o) => o.content),
+            selectedOptionIndex:
+              selectedOptionIndex !== -1 ? selectedOptionIndex : null,
+            correctOptionIndex:
+              correctOptionIndex !== -1 ? correctOptionIndex : null,
+            isCorrect: Boolean(
+              correctOption && selectedOptionId === correctOption.id,
+            ),
+          };
+        })
+        .filter((q): q is NonNullable<typeof q> => q !== null);
+    } else {
+      resultQuestions = questions.map((q) => {
+        const selectedOptionId = selected.get(q.id);
+        const selectedOptionIndex =
+          q.options.find((o) => o.id === selectedOptionId)?.position ?? null;
+        const correctOption = q.options.find((o) => o.isCorrect);
+        return {
+          id: q.id,
+          position: q.position,
+          content: q.content,
+          options: q.options.map((o) => o.content),
+          selectedOptionIndex,
+          correctOptionIndex: correctOption?.position ?? null,
+          isCorrect: Boolean(
+            correctOption && selectedOptionId === correctOption.id,
+          ),
+        };
+      });
+    }
+
     return {
       attempt: {
         id: attempt.id,
@@ -359,23 +507,7 @@ export class AttemptsService {
         incorrectCount: attempt.incorrectCount,
         unansweredCount: attempt.totalQuestions - answers.length,
       },
-      questions: questions.map((q) => {
-        const selectedOptionId = selected.get(q.id);
-        const selectedOptionIndex =
-          q.options.find((o) => o.id === selectedOptionId)?.position ?? null;
-        const correctOption = q.options.find((o) => o.isCorrect);
-        return {
-          id: q.id,
-          position: q.position,
-          content: q.content,
-          options: q.options.map((o) => o.content),
-          selectedOptionIndex,
-          correctOptionIndex: correctOption?.position ?? null,
-          isCorrect: Boolean(
-            correctOption && selectedOptionId === correctOption.id,
-          ),
-        };
-      }),
+      questions: resultQuestions,
     };
   }
   async recordViolation(

@@ -133,6 +133,30 @@ describe('AttemptsRepository write conflict retries', () => {
     expect(tx.user.update.mock.calls[1][0].data).not.toHaveProperty('authVersion');
   });
 
+  it('automatically queries exam questions and generates shuffledMapping when creating a new attempt', async () => {
+    tx.attempt.findFirst.mockResolvedValue(null);
+    tx.question.findMany.mockResolvedValue([
+      { id: 'q1', options: [{ id: 'opt1' }, { id: 'opt2' }] },
+      { id: 'q2', options: [{ id: 'opt3' }, { id: 'opt4' }] },
+    ]);
+
+    await repository.createOrResume({
+      userId: attempt.userId,
+      examId: attempt.examId,
+      deadlineAt: attempt.deadlineAt,
+      totalQuestions: 2,
+    });
+
+    expect(tx.attempt.create).toHaveBeenCalledTimes(1);
+    const createData = tx.attempt.create.mock.calls[0][0].data;
+    expect(createData).toHaveProperty('shuffledMapping');
+    expect(createData.shuffledMapping).toHaveLength(2);
+    expect(createData.shuffledMapping.map((m: any) => m.questionId).sort()).toEqual([
+      'q1',
+      'q2',
+    ]);
+  });
+
   describe.each(['save', 'submit', 'cancel'] as const)('%s', (operation) => {
     const run = (): Promise<unknown> => {
       if (operation === 'save') {

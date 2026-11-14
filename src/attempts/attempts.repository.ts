@@ -8,6 +8,7 @@ import { AttemptStatus, ExamStatus, Prisma, Role, ViolationType } from '@prisma/
 import { PrismaService } from '../database/prisma.service';
 import { retryWithWriteConflict } from '../database/mongo-conflict-retry';
 import { lockExamStatus } from '../exams/exam-write-conflict';
+import { generateShuffledMapping } from './shuffling';
 
 const examInfo = { select: { id: true, title: true, enableProctoring: true, maxViolations: true } } as const;
 
@@ -115,6 +116,7 @@ export class AttemptsRepository {
     examId: string;
     deadlineAt: Date;
     totalQuestions: number;
+    shuffledMapping?: Prisma.InputJsonValue;
   }) {
     return this.withWriteConflictRetry(() =>
       this.prisma.$transaction(async (tx) => {
@@ -163,8 +165,34 @@ export class AttemptsRepository {
           orderBy: { startedAt: 'desc' },
         });
         if (running) return { attempt: running, resumed: true };
+
+        let shuffledMapping = data.shuffledMapping;
+        if (!shuffledMapping && tx.question?.findMany) {
+          const questions = await tx.question.findMany({
+            where: { examId: data.examId },
+            orderBy: { position: 'asc' },
+            select: {
+              id: true,
+              options: {
+                orderBy: { position: 'asc' },
+                select: { id: true },
+              },
+            },
+          });
+          if (questions && questions.length > 0) {
+            shuffledMapping = generateShuffledMapping(
+              questions,
+            ) as unknown as Prisma.InputJsonValue;
+          }
+        }
+
         return {
-          attempt: await tx.attempt.create({ data }),
+          attempt: await tx.attempt.create({
+            data: {
+              ...data,
+              ...(shuffledMapping ? { shuffledMapping } : {}),
+            },
+          }),
           resumed: false,
         };
       }),

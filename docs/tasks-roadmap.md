@@ -7,6 +7,21 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 
 ---
 
+## 🛡️ Phân Chia Trách Nhiệm Git & Quy Trình Làm Việc (Git & Workflow Policy)
+
+> [!IMPORTANT]
+> **Quy định bắt buộc đối với AI Assistant:**
+> 1. **Phân nhánh & Thao tác Git thuộc toàn quyền của Người dùng:**
+>    * Người dùng sẽ tự quản lý toàn bộ việc phân nhánh (`checkout`, tạo branch, `pull`, `merge`, `push`, đồng bộ remote).
+>    * AI **tuyệt đối không tự ý can thiệp** vào phân nhánh, không tự chuyển nhánh hay cố gắng kéo/đồng bộ code.
+>    * **Không cần bận tâm về nhánh `main` ở local:** Người dùng không yêu cầu đồng bộ `main` local, quan trọng là code trên GitHub/web đầy đủ.
+> 2. **Trách nhiệm của AI Assistant:**
+>    * **Chỉ tập trung vào công việc (Implementation & Testing):** Triển khai code, sửa lỗi, viết test và hoàn thiện task trực tiếp trên nhánh làm việc hiện tại mà người dùng đã đứng sẵn.
+>    * Chỉ chạy các lệnh Git đọc trạng thái (`git status`, `git diff`, `git log`, đọc file) khi cần khảo sát.
+>    * Sau khi hoàn tất và pass toàn bộ test, báo cáo kết quả chi tiết để người dùng tự kiểm tra và quản lý commit/push/PR.
+
+---
+
 ## 📊 Bảng Theo Dõi Tiến Độ Tổng Quan (Progress Tracker)
 
 | Mã Task | Tên Nhiệm vụ | Phạm vi | Trạng thái | Ghi chú |
@@ -18,7 +33,7 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 | **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ✅ **Hoàn thành** | `@nestjs/schedule` Cron 10s `AttemptSchedulerService`, bỏ `while(true)` ở `GET /exams/:id/results`, UI auto-submit khi hết giờ |
 | **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ✅ **Hoàn thành** | `GradingStrategy` & `StandardGradingStrategy`, DI vào `AttemptsService` |
 | **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ✅ **Hoàn thành** | Throttler chống brute-force, Terminus `/health/live`, `/health/ready` (ping MongoDB) |
-| **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ⏳ *Chờ xử lý* | Random permutation mapping cho từng học sinh |
+| **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ✅ **Hoàn thành** | Backend: Hoàn thành lưu hoán vị & tính điểm; Frontend: Đã tương thích sẵn (không cần đổi code) |
 | **`TASK-08`** | **Giám sát Trình duyệt (Tab switch, Fullscreen)** | Backend & Frontend | ⏳ *Chờ xử lý* | Ghi nhận `AttemptViolation`, cảnh báo popup |
 | **`TASK-09`** | **Đa dạng hóa câu hỏi (Nhiều đáp án, Đúng/Sai)** | Backend & Frontend | ⏳ *Chờ xử lý* | Enum `QuestionType`, Partial credit chấm điểm |
 | **`TASK-10`** | **Công thức Toán KaTeX & Code Lập trình** | Frontend | ⏳ *Chờ xử lý* | Render LaTeX `$ ... $`, highlight cú pháp code |
@@ -112,13 +127,17 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 
 ### 📌 MODULE 3: CHỐNG GIAN LẬN & TRẢI NGHIỆM LÀM BÀI
 
-#### `TASK-07`: Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)
+#### `TASK-07`: Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat) — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Khi học sinh bắt đầu làm bài (`POST /exams/:id/attempts`): Tạo bản sao thứ tự câu hỏi và thứ tự đáp án (A, B, C, D) đã được xáo ngẫu nhiên riêng cho lượt làm bài đó.
-    *   Lưu bản đồ hoán vị (shuffled mapping) vào `Attempt` để lúc chấm điểm quy về đúng đáp án gốc.
+    *   Bổ sung trường `shuffledMapping Json?` vào `Attempt` trong `prisma/schema.prisma`.
+    *   Cài đặt thuật toán xáo trộn Fisher-Yates Knuth với số ngẫu nhiên an toàn mật mã (`randomInt` từ `node:crypto`) trong `src/attempts/shuffling.ts`.
+    *   Khi học sinh bắt đầu làm bài (`POST /exams/:id/attempts`): Tạo bản sao thứ tự câu hỏi và thứ tự đáp án (A, B, C, D) đã được xáo ngẫu nhiên riêng cho lượt làm bài đó và lưu vào `Attempt.shuffledMapping`.
+    *   Khi học sinh tiếp tục lượt thi (`resumed: true`): Giữ nguyên thứ tự câu hỏi và đáp án đã xáo trộn, ánh xạ đáp án đã lưu về đúng vị trí hiển thị của học sinh.
+    *   Khi chọn đáp án (`PUT /attempts/:attemptId/answers/:questionId`): Tự động quy đổi vị trí hiển thị (0, 1, 2, 3) sang đúng `Option.id` gốc trong DB.
+    *   Khi xem kết quả (`GET /attempts/:attemptId/result`): Hiển thị danh sách câu hỏi và lựa chọn theo đúng thứ tự mà học sinh đã làm, chỉ rõ đáp án đã chọn và đáp án đúng. Hỗ trợ fallback cho các lượt thi cũ không có `shuffledMapping`.
 *   🎨 **Frontend:**
-    *   Hiển thị danh sách câu hỏi và lựa chọn theo đúng thứ tự xáo trộn mà backend trả về.
-*   ✅ **Nghiệm thu:** Hai học sinh cùng mở 1 đề thi thì câu số 1 và vị trí các đáp án của 2 người hoàn toàn khác nhau.
+    *   Đã tương thích sẵn với cấu trúc API (`session.questions` và `session.answers`): Giao diện `TakeExamPage.tsx` tự động hiển thị câu hỏi và đáp án theo đúng thứ tự xáo trộn mà server trả về mà **không cần sửa hay commit thêm code mới ở repo Frontend**.
+*   ✅ **Nghiệm thu:** Hai học sinh cùng mở 1 đề thi thì câu số 1 và vị trí các đáp án của 2 người hoàn toàn khác nhau; 6/6 tests `shuffling.spec.ts`, 6/6 tests `attempts-shuffling.spec.ts`, 13/13 tests `attempts.repository.spec.ts`, toàn bộ 54 unit tests module attempts pass 100%.
 
 #### `TASK-08`: Cơ chế Giám sát Gian lận trên Trình duyệt (Browser Anti-cheat)
 *   ⚙️ **Backend:**
