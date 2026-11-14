@@ -35,6 +35,8 @@ import { ParseObjectIdPipe } from './parse-object-id.pipe';
 import { AttemptsService } from './attempts.service';
 import { SaveAnswerDto } from './dto/save-answer.dto';
 import { RecordViolationDto } from './dto/record-violation.dto';
+import { Throttle } from '@nestjs/throttler';
+import { getUserTracker } from '../common/throttler/user-tracker';
 
 @ApiTags('Attempts')
 @ApiBearerAuth()
@@ -90,6 +92,13 @@ export class AttemptsController {
   }
 
   @Put('attempts/:attemptId/answers/:questionId')
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 1000,
+      getTracker: getUserTracker,
+    },
+  })
   @ApiOperation({ summary: 'Select / change the answer of one question' })
   @ApiNotFoundResponse({ description: 'Attempt or question not found' })
   @ApiConflictResponse({ description: 'Attempt submitted or time is over' })

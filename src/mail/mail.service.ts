@@ -51,6 +51,9 @@ export class MailService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
     if (this.transporter) {
       try {
         await this.transporter.verify();

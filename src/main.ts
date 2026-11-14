@@ -15,7 +15,14 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: [
+      'health',
+      'health/(.*)',
+      'api/v1/health',
+      'api/v1/health/(.*)',
+    ],
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

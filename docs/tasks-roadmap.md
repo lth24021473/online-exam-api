@@ -15,9 +15,9 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 | **`CORE-01`** | **Chính sách Quyền Admin: Không xóa User** | Backend & Frontend | ✅ **Hoàn thành** | Đã xóa `DELETE /admin/users/:id` khỏi Swagger, Controller & UI |
 | **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | `PATCH /users/me`, `POST /auth/change-password` |
 | **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
-| **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ⏳ *Chờ xử lý* | Cron 10s chốt bài, bỏ vòng lặp `while(true)` kết quả |
-| **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ⏳ *Chờ xử lý* | `GradingStrategy` linh hoạt cho nhiều dạng câu hỏi |
-| **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ⏳ *Chờ xử lý* | Throttler chống brute-force, Terminus `/health/live` |
+| **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ✅ **Hoàn thành** | `@nestjs/schedule` Cron 10s `AttemptSchedulerService`, bỏ `while(true)` ở `GET /exams/:id/results`, UI auto-submit khi hết giờ |
+| **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ✅ **Hoàn thành** | `GradingStrategy` & `StandardGradingStrategy`, DI vào `AttemptsService` |
+| **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ✅ **Hoàn thành** | Throttler chống brute-force, Terminus `/health/live`, `/health/ready` (ping MongoDB) |
 | **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ⏳ *Chờ xử lý* | Random permutation mapping cho từng học sinh |
 | **`TASK-08`** | **Giám sát Trình duyệt (Tab switch, Fullscreen)** | Backend & Frontend | ⏳ *Chờ xử lý* | Ghi nhận `AttemptViolation`, cảnh báo popup |
 | **`TASK-09`** | **Đa dạng hóa câu hỏi (Nhiều đáp án, Đúng/Sai)** | Backend & Frontend | ⏳ *Chờ xử lý* | Enum `QuestionType`, Partial credit chấm điểm |
@@ -79,31 +79,31 @@ Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ư
 
 ### 📌 MODULE 2: HẠ TẦNG THI & CHỐNG NGHẼN (EXAM CORE & RESILIENCY)
 
-#### `TASK-04`: Tiến trình Worker tự động chốt bài thi quá hạn (Background Auto-finalizer)
+#### `TASK-04`: Tiến trình Worker tự động chốt bài thi quá hạn (Background Auto-finalizer) — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Cài đặt `@nestjs/schedule` và kích hoạt trong `AppModule`.
+    *   Cài đặt `@nestjs/schedule` và kích hoạt `ScheduleModule.forRoot()` trong `AppModule`.
     *   Tạo service `AttemptSchedulerService` chạy Cron định kỳ mỗi 10 giây (`@Cron('*/10 * * * * *')`).
-    *   Tự động quét các `Attempt` có `status = IN_PROGRESS` và `deadlineAt <= now()` $\rightarrow$ tự động tính điểm và chuyển sang `SUBMITTED`.
-    *   **Loại bỏ hoàn toàn** vòng lặp `while(true)` chốt lười trong API `GET /exams/:id/results`.
+    *   Tự động quét các `Attempt` có `status = IN_PROGRESS` và `deadlineAt <= now()` (kèm index `[status, deadlineAt]`) $\rightarrow$ tự động tính điểm và chuyển sang `SUBMITTED`.
+    *   **Loại bỏ hoàn toàn** vòng lặp `while(true)` chốt lười (`finalizeExpiredForExam`) trong API `GET /exams/:id/results`.
 *   🎨 **Frontend:**
     *   Tại `src/pages/TakeExamPage.tsx`: Khi đồng hồ đếm ngược về `00:00:00`, khóa toàn bộ tương tác, hiển thị popup: *"Đã hết giờ làm bài! Hệ thống đang tự động thu bài và tính điểm..."*, sau đó tự động chuyển hướng sang trang kết quả `/attempts/:id/result`.
-*   ✅ **Nghiệm thu:** Học sinh tắt máy/mất mạng khi hết giờ thì bài thi vẫn tự động được chấm trên server đúng từng giây.
+*   ✅ **Nghiệm thu:** Học sinh tắt máy/mất mạng khi hết giờ thì bài thi vẫn tự động được chấm trên server đúng từng giây; Frontend tự động khóa làm bài và điều hướng mượt mà sang trang kết quả khi hết thời gian; 8/8 tests scheduler & 134/134 unit tests pass.
 
-#### `TASK-05`: Tách thuật toán Chấm điểm (Strategy Pattern)
+#### `TASK-05`: Tách thuật toán Chấm điểm (Strategy Pattern) — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Tạo interface `GradingStrategy` với phương thức `calculateScore(questions, answers)`.
-    *   Cài đặt `StandardGradingStrategy` (công thức chia đều điểm hiện tại).
-    *   Inject Strategy vào `AttemptsService` thay cho đoạn code hardcode hiện tại, sẵn sàng cho việc mở rộng các dạng chấm điểm khác ở Pha 2 (điểm trừ, partial credit).
+    *   Tạo interface `GradingStrategy` với phương thức `calculateScore(questions, answers, totalQuestions?)`.
+    *   Cài đặt `StandardGradingStrategy` (công thức chia đều điểm hiện tại, validation 1 đáp án đúng).
+    *   Inject Strategy vào `AttemptsService` thay cho đoạn code hardcode trước đây, sẵn sàng cho việc mở rộng các dạng chấm điểm khác ở Pha 2 (điểm trừ, partial credit).
 *   🎨 **Frontend:** Không ảnh hưởng giao diện.
-*   ✅ **Nghiệm thu:** Toàn bộ test suite chấm điểm hiện tại (`npm run test:e2e`) vẫn pass 100%.
+*   ✅ **Nghiệm thu:** 10/10 tests `StandardGradingStrategy`, 4/4 tests `AttemptsService - Grading Strategy Integration`, 16/16 tests `attempts.e2e-spec.ts` pass 100%.
 
-#### `TASK-06`: Bảo vệ API với Rate Limiting & Giám sát Sức khỏe Container
+#### `TASK-06`: Bảo vệ API với Rate Limiting & Giám sát Sức khỏe Container — [✅ ĐÃ HOÀN THÀNH]
 *   ⚙️ **Backend:**
-    *   Cài đặt `@nestjs/throttler`: Gắn chặn brute-force cho `/auth/login` (tối đa 5 lần/phút) và giới hạn gọi `/attempts/:id/answers/:id` (tối đa 5 lần/giây/user).
-    *   Cài đặt `@nestjs/terminus`: Mở route `/health/live` và `/health/ready` (ping MongoDB).
+    *   Cài đặt `@nestjs/throttler`: Gắn chặn brute-force cho `/auth/login` (tối đa 5 lần/phút) và giới hạn gọi `/attempts/:id/answers/:id` (tối đa 5 lần/giây/user với custom `getUserTracker`).
+    *   Cài đặt `@nestjs/terminus`: Mở route `/health/live` và `/health/ready` (ping MongoDB qua `PrismaHealthIndicator`), hỗ trợ cả route trực tiếp và route qua prefix `/api/v1/health/*`. Cập nhật healthcheck container trong `docker-compose.yml`.
 *   🎨 **Frontend:**
-    *   Bắt lỗi `HTTP 429 Too Many Requests` trong Axios và hiển thị thông báo tiếng Việt: *"Bạn đang thao tác quá nhanh, vui lòng thử lại sau vài giây!"*.
-*   ✅ **Nghiệm thu:** Dùng script spam API lưu đáp án sẽ bị chặn ở request thứ 6; container Docker có thể check health chính xác.
+    *   Bắt lỗi `HTTP 429 Too Many Requests` trong Axios interceptor và hiển thị thông báo tiếng Việt: *"Bạn đang thao tác quá nhanh, vui lòng thử lại sau vài giây!"*.
+*   ✅ **Nghiệm thu:** 3/3 tests `health.controller.spec.ts`, 7/7 tests `health-and-throttler.e2e-spec.ts` pass, 12/12 Playwright tests `axios-client.spec.ts` pass, toàn bộ 151 unit tests và 81 e2e tests backend pass 100%.
 
 ---
 

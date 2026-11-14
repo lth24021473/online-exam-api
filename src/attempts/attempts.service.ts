@@ -1,14 +1,22 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Attempt, AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { RecordViolationDto } from './dto/record-violation.dto';
 import { AttemptsRepository } from './attempts.repository';
+import {
+  GRADING_STRATEGY,
+  StandardGradingStrategy,
+  MAX_SCORE,
+} from './grading';
+import type { GradingStrategy } from './grading';
 
-export const MAX_SCORE = 10;
+export { MAX_SCORE };
 
 type ExamInfo = {
   id: string;
@@ -25,7 +33,20 @@ type OwnedAttempt = NonNullable<
 
 @Injectable()
 export class AttemptsService {
-  constructor(private readonly repo: AttemptsRepository) {}
+  private readonly gradingStrategy: GradingStrategy;
+
+  constructor(
+    private readonly repo: AttemptsRepository,
+    @Optional()
+    @Inject(GRADING_STRATEGY)
+    gradingStrategy?: GradingStrategy,
+  ) {
+    this.gradingStrategy = gradingStrategy ?? new StandardGradingStrategy();
+  }
+
+  getGradingStrategy(): GradingStrategy {
+    return this.gradingStrategy;
+  }
 
   async start(
     userId: string,
@@ -198,25 +219,9 @@ export class AttemptsService {
     return this.buildResult(attempt);
   }
 
-  /** Used after an exam manager's ownership/role check, before reading results. */
-  async finalizeExpiredForExam(examId: string) {
-    for (;;) {
-      const expired = await this.repo.findExpiredForExam(examId, 50);
-      if (expired.length === 0) return;
-      for (const attempt of expired) {
-        try {
-          await this.finalize(attempt);
-        } catch (error) {
-          if (error instanceof ConflictException) {
-            const current = await this.repo.findById(attempt.id);
-            if (!current || current.status !== AttemptStatus.IN_PROGRESS) {
-              continue;
-            }
-          }
-          throw error;
-        }
-      }
-    }
+  /** Finalize a single expired attempt (used by the background auto-finalizer). */
+  async finalizeExpiredAttempt(attempt: Attempt) {
+    return this.finalize(attempt);
   }
 
   async getHistory(
@@ -304,21 +309,12 @@ export class AttemptsService {
       attempt.id,
       attempt.userId,
       (questions, answers, current) => {
-        const key = new Map(
-          questions.map((q) => {
-            const correctOptions = q.options.filter((o) => o.isCorrect);
-            if (correctOptions.length !== 1) {
-              throw new ConflictException(
-                'Each question must have one correct option',
-              );
-            }
-            return [q.id, correctOptions[0].id];
-          }),
-        );
-        const correctCount = answers.filter(
-          (a) => key.get(a.questionId) === a.selectedOptionId,
-        ).length;
-        const total = current.totalQuestions;
+        const { score, correctCount, incorrectCount } =
+          this.gradingStrategy.calculateScore(
+            questions,
+            answers,
+            current.totalQuestions,
+          );
         const now = new Date();
         const reason =
           terminatedReason ??
@@ -326,10 +322,8 @@ export class AttemptsService {
         return {
           submittedAt: now > current.deadlineAt ? current.deadlineAt : now,
           correctCount,
-          incorrectCount: total - correctCount,
-          score: total
-            ? Math.round((correctCount / total) * MAX_SCORE * 100) / 100
-            : 0,
+          incorrectCount,
+          score,
           terminatedReason: reason,
         };
       },

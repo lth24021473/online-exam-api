@@ -5,7 +5,7 @@ import { AttemptStatus, ExamStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
-import { AttemptsService } from '../src/attempts/attempts.service';
+import { AttemptSchedulerService } from '../src/attempts/attempt-scheduler.service';
 import { AttemptsRepository } from '../src/attempts/attempts.repository';
 
 // Opt in with a dedicated disposable database, never the application's DATABASE_URL.
@@ -312,7 +312,7 @@ describeMongo('Attempts with real MongoDB', () => {
         totalQuestions: 2,
       },
     });
-    await app.get(AttemptsService).finalizeExpiredForExam(examId);
+    await app.get(AttemptSchedulerService).handleExpiredAttempts();
     for (const [index, fixture] of expired.entries()) {
       const stored = await prisma.attempt.findUniqueOrThrow({
         where: { id: fixture.id },

@@ -5,6 +5,7 @@ import { AttemptStatus, ExamStatus, Role, User } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { AttemptSchedulerService } from '../src/attempts/attempt-scheduler.service';
 import { PrismaService } from '../src/database/prisma.service';
 
 const databaseUrl = process.env.MONGO_TEST_DATABASE_URL;
@@ -542,6 +543,7 @@ describeMongo('Exam management with real MongoDB', () => {
       (await prisma.attempt.findUniqueOrThrow({ where: { id: attemptId } }))
         .status,
     ).toBe(AttemptStatus.IN_PROGRESS);
+    await app.get(AttemptSchedulerService).handleExpiredAttempts();
     const first = await call('get', `/exams/${id}/results`).expect(200);
     expect(first.body.data[0]).toMatchObject({
       id: attemptId,

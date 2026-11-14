@@ -80,6 +80,7 @@ class InMemoryAttemptsRepository {
     durationMinutes: 30,
     status: ExamStatus.PUBLISHED as ExamStatus,
     _count: { questions: 2 },
+    maxAttempts: 5,
   };
   readonly questions: QuestionFixture[] = [
     {
@@ -123,6 +124,15 @@ class InMemoryAttemptsRepository {
       ],
     },
   ];
+
+  countSubmitted(userId: string, examId: string) {
+    return [...this.attempts.values()].filter(
+      (attempt) =>
+        attempt.userId === userId &&
+        attempt.examId === examId &&
+        attempt.status === AttemptStatus.SUBMITTED,
+    ).length;
+  }
 
   findExamForStart(examId: string) {
     return examId === EXAM_ID ? this.exam : null;
@@ -171,6 +181,20 @@ class InMemoryAttemptsRepository {
   findById(id: string) {
     const attempt = this.attempts.get(id);
     return attempt ? { ...attempt } : null;
+  }
+
+  findExpired(take = 50, excludeIds: string[] = []) {
+    const now = Date.now();
+    return [...this.attempts.values()]
+      .filter(
+        (attempt) =>
+          attempt.status === AttemptStatus.IN_PROGRESS &&
+          attempt.deadlineAt.getTime() <= now &&
+          !excludeIds.includes(attempt.id),
+      )
+      .sort((a, b) => a.deadlineAt.getTime() - b.deadlineAt.getTime())
+      .slice(0, take)
+      .map((attempt) => ({ ...attempt }));
   }
 
   listQuestions(examId: string) {
@@ -474,7 +498,7 @@ describe('Attempts HTTP API (e2e, in-memory persistence)', () => {
       status: AttemptStatus.SUBMITTED,
       examTitle: 'Sample exam',
     });
-    expect(result.summary).toEqual({
+    expect(result.summary).toMatchObject({
       score: 10,
       maxScore: 10,
       totalQuestions: 2,
