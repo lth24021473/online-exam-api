@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { AttemptStatus, Prisma } from '@prisma/client';
+import { AttemptStatus, Prisma, ViolationType } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AttemptsRepository, AttemptWithExam } from './attempts.repository';
 
@@ -49,6 +49,7 @@ describe('AttemptsRepository write conflict retries', () => {
       create: jest.fn(),
     },
     attemptAnswer: { upsert: jest.fn(), findMany: jest.fn() },
+    attemptViolation: { create: jest.fn() },
     question: { findMany: jest.fn() },
   };
   const prisma = {
@@ -219,6 +220,57 @@ describe('AttemptsRepository write conflict retries', () => {
         message: expect.stringContaining('Please retry'),
       });
       expect(conflictPoint()).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('recordViolation write conflict retry', () => {
+    beforeEach(() => {
+      tx.attempt.findFirst.mockResolvedValue(attempt);
+      tx.attemptViolation.create.mockResolvedValue({
+        id: 'violation-1',
+        attemptId: attempt.id,
+        type: ViolationType.TAB_SWITCH,
+        detail: null,
+      });
+      tx.attempt.update.mockResolvedValue({
+        ...attempt,
+        violationCount: 1,
+      });
+    });
+
+    it('retries P2034 and succeeds using a fresh operation', async () => {
+      tx.attempt.update.mockRejectedValueOnce(writeConflict());
+
+      const result = await repository.recordViolation(
+        attempt.id,
+        attempt.userId,
+        ViolationType.TAB_SWITCH,
+      );
+
+      expect(tx.attempt.update).toHaveBeenCalledTimes(2);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({
+        violationCount: 1,
+        maxViolations: 3,
+        shouldTerminate: false,
+      });
+    });
+
+    it('returns HTTP 409 after three write conflicts', async () => {
+      tx.attempt.update.mockRejectedValue(writeConflict());
+
+      await expect(
+        repository.recordViolation(
+          attempt.id,
+          attempt.userId,
+          ViolationType.TAB_SWITCH,
+        ),
+      ).rejects.toMatchObject({
+        constructor: ConflictException,
+        status: 409,
+        message: expect.stringContaining('Please retry'),
+      });
+      expect(tx.attempt.update).toHaveBeenCalledTimes(3);
     });
   });
 });

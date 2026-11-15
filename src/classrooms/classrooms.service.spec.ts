@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as bcrypt from 'bcrypt';
 import { ClassroomsService, CLASSROOM_CODE_CHARS } from './classrooms.service';
 import { ClassroomsRepository } from './classrooms.repository';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
@@ -83,14 +84,18 @@ describe('ClassroomsService', () => {
       const result = await service.create(managerId, dto);
 
       expect(repository.findByCode).toHaveBeenCalledWith('ABC234');
-      expect(repository.create).toHaveBeenCalledWith({
-        name: 'Lop Toan 10A1',
-        description: 'On thi dai hoc',
-        password: 'pass123',
-        code: 'ABC234',
-        managerId,
-      });
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Lop Toan 10A1',
+          description: 'On thi dai hoc',
+          code: 'ABC234',
+          managerId,
+        }),
+      );
+      const createCall = repository.create.mock.calls[0][0];
+      expect(await bcrypt.compare('pass123', createCall.password)).toBe(true);
       expect(result.id).toBe('class-1');
+      expect((result as any).password).toBeUndefined();
     });
 
     it('should retry code generation when collision occurs and succeed', async () => {
@@ -153,10 +158,11 @@ describe('ClassroomsService', () => {
     });
 
     it('should throw BadRequestException if password is incorrect', async () => {
+      const hashedPassword = await bcrypt.hash('correct_password', 10);
       repository.findByCode.mockResolvedValue({
         id: 'class-1',
         code: 'ABC234',
-        password: 'correct_password',
+        password: hashedPassword,
       } as any);
 
       await expect(service.join(userId, dto)).rejects.toThrow(
@@ -165,10 +171,11 @@ describe('ClassroomsService', () => {
     });
 
     it('should throw ConflictException if user is already a member', async () => {
+      const hashedPassword = await bcrypt.hash('pass123', 10);
       repository.findByCode.mockResolvedValue({
         id: 'class-1',
         code: 'ABC234',
-        password: 'pass123',
+        password: hashedPassword,
       } as any);
       repository.findMember.mockResolvedValue({
         id: 'member-1',
@@ -183,11 +190,12 @@ describe('ClassroomsService', () => {
     });
 
     it('should add member and return joined classroom details on success', async () => {
+      const hashedPassword = await bcrypt.hash('pass123', 10);
       const classroom = {
         id: 'class-1',
         name: 'Lop Toan 10A1',
         code: 'ABC234',
-        password: 'pass123',
+        password: hashedPassword,
         managerId: 'manager-1',
       };
       repository.findByCode.mockResolvedValue(classroom as any);

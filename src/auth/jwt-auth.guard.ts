@@ -10,8 +10,20 @@ import { Role } from '@prisma/client';
 import { TokenRevocationService } from './token-revocation.service';
 import { PrismaService } from '../database/prisma.service';
 
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+  fullName: string;
+  avatar: string | null;
+  cover: string | null;
+  workplace: string | null;
+  currentResidence: string | null;
+  createdAt: Date;
+}
+
 export interface AuthenticatedRequest extends Request {
-  user: { id: string; email: string; role: Role };
+  user: AuthenticatedUser;
   auth: { token: string; sub: string; exp: number };
 }
 
@@ -68,7 +80,18 @@ export class JwtAuthGuard implements CanActivate {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, authVersion: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        authVersion: true,
+        fullName: true,
+        avatar: true,
+        cover: true,
+        workplace: true,
+        currentResidence: true,
+        createdAt: true,
+      },
     });
     if (!user) {
       throw new UnauthorizedException('Account no longer exists');
@@ -88,6 +111,12 @@ export class JwtAuthGuard implements CanActivate {
       id: user.id,
       email: user.email,
       role: user.role,
+      fullName: user.fullName,
+      avatar: user.avatar,
+      cover: user.cover,
+      workplace: user.workplace,
+      currentResidence: user.currentResidence,
+      createdAt: user.createdAt,
     };
     return true;
   }

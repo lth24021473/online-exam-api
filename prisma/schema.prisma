@@ -97,7 +97,6 @@ model ClassroomMember {
 
   @@unique([classroomId, userId])
   @@index([userId])
-  @@index([classroomId])
 }
 
 model Exam {
@@ -126,6 +125,8 @@ model Exam {
   @@index([managerId])
   @@index([status])
   @@index([classroomId])
+  @@index([status, classroomId, publishedAt(sort: Desc)])
+  @@index([managerId, createdAt(sort: Desc)])
 }
 
 model Question {
@@ -176,7 +177,9 @@ model Attempt {
 
   @@index([userId, startedAt])
   @@index([examId, status])
+  @@index([userId, examId, status])
   @@index([status, deadlineAt])
+  @@index([examId, status, startedAt(sort: Desc)])
 }
 
 model AttemptViolation {

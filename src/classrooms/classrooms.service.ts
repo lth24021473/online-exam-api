@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { ClassroomsRepository } from './classrooms.repository';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
 import { JoinClassroomDto } from './dto/join-classroom.dto';
@@ -47,13 +48,16 @@ export class ClassroomsService {
       );
     }
 
-    return this.classroomsRepository.create({
+    const hashedPassword = await bcrypt.hash(dto.password.trim(), 10);
+
+    const classroom = await this.classroomsRepository.create({
       name: dto.name.trim(),
       description: dto.description?.trim(),
-      password: dto.password.trim(),
+      password: hashedPassword,
       code,
       managerId,
     });
+    return stripPassword(classroom);
   }
 
   async join(userId: string, dto: JoinClassroomDto) {
@@ -64,7 +68,11 @@ export class ClassroomsService {
       throw new NotFoundException('Mã lớp không tồn tại');
     }
 
-    if (classroom.password !== dto.password.trim()) {
+    const isPasswordValid =
+      classroom.password &&
+      (await bcrypt.compare(dto.password.trim(), classroom.password));
+
+    if (!isPasswordValid) {
       throw new BadRequestException('Mật khẩu lớp không chính xác');
     }
 
@@ -87,7 +95,8 @@ export class ClassroomsService {
   }
 
   async findManaged(managerId: string) {
-    return this.classroomsRepository.findManaged(managerId);
+    const classrooms = await this.classroomsRepository.findManaged(managerId);
+    return classrooms.map((classroom) => stripPassword(classroom));
   }
 
   async findJoined(userId: string) {
@@ -99,7 +108,7 @@ export class ClassroomsService {
     if (!classroom) {
       throw new NotFoundException('Lớp học không tồn tại');
     }
-    return classroom;
+    return stripPassword(classroom);
   }
 
   async assertAccess(classroomId: string, userId: string, role: Role) {

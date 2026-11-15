@@ -2,7 +2,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
@@ -51,22 +51,55 @@ export class UsersRepository {
     });
   }
 
-  async findAll() {
-    return this.prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        avatar: true,
-        cover: true,
-        workplace: true,
-        currentResidence: true,
-        createdAt: true,
-        updatedAt: true,
+  async findAll(page = 1, limit = 20, search?: string) {
+    const pageNum = Number.isInteger(page) && page > 0 ? page : 1;
+    const limitNum =
+      Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+    const skip = (pageNum - 1) * limitNum;
+    const take = limitNum;
+
+    const where: Prisma.UserWhereInput = {};
+    if (search && search.trim()) {
+      const trimmed = search.trim();
+      where.OR = [
+        { email: { contains: trimmed, mode: 'insensitive' } },
+        { fullName: { contains: trimmed, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, data] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+          avatar: true,
+          cover: true,
+          workplace: true,
+          currentResidence: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    return {
+      data,
+      meta: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
       },
-    });
+    };
   }
 
   async updateRole(id: string, role: Role) {

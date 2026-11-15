@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AttemptStatus, Role, ViolationType } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
@@ -183,10 +183,13 @@ describe('AttemptsService - Proctoring', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should allow exam manager to view violations for any student attempt', async () => {
+    it('should allow exam manager to view violations for their own exam attempt', async () => {
       mockRepository.findById.mockResolvedValue({
         id: 'att1',
         userId: 'student1',
+        exam: {
+          managerId: 'manager1',
+        },
       } as any);
       mockRepository.findViolations.mockResolvedValue([
         {
@@ -202,6 +205,35 @@ describe('AttemptsService - Proctoring', () => {
       expect(res.attemptId).toBe('att1');
       expect(res.violations).toHaveLength(1);
       expect(res.violations[0].type).toBe(ViolationType.DEVTOOLS_OPEN);
+    });
+
+    it('should throw ForbiddenException if exam manager does not own the exam', async () => {
+      mockRepository.findById.mockResolvedValue({
+        id: 'att1',
+        userId: 'student1',
+        exam: {
+          managerId: 'other_manager',
+        },
+      } as any);
+
+      await expect(
+        service.getViolations('manager1', Role.EXAM_MANAGER, 'att1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow admin to view violations for any attempt', async () => {
+      mockRepository.findById.mockResolvedValue({
+        id: 'att1',
+        userId: 'student1',
+        exam: {
+          managerId: 'manager1',
+        },
+      } as any);
+      mockRepository.findViolations.mockResolvedValue([]);
+
+      const res = await service.getViolations('admin1', Role.ADMIN, 'att1');
+      expect(res.attemptId).toBe('att1');
+      expect(res.violations).toHaveLength(0);
     });
   });
 

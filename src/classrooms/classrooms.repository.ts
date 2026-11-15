@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { stripPassword } from './classrooms.util';
 import { PrismaService } from '../database/prisma.service';
+
+export function stripPassword<T extends Record<string, any>>(
+  entity: T,
+): Omit<T, 'password'> {
+  const copy = { ...entity };
+  delete copy.password;
+  return copy;
+}
 
 @Injectable()
 export class ClassroomsRepository {
@@ -13,7 +20,7 @@ export class ClassroomsRepository {
     code: string;
     managerId: string;
   }) {
-    return this.prisma.classroom.create({
+    const classroom = await this.prisma.classroom.create({
       data: {
         name: data.name,
         description: data.description,
@@ -32,6 +39,7 @@ export class ClassroomsRepository {
         },
       },
     });
+    return stripPassword(classroom);
   }
 
   async findByCode(code: string) {
@@ -57,7 +65,7 @@ export class ClassroomsRepository {
   }
 
   async findById(id: string) {
-    return this.prisma.classroom.findUnique({
+    const classroom = await this.prisma.classroom.findUnique({
       where: { id },
       include: {
         manager: {
@@ -76,10 +84,11 @@ export class ClassroomsRepository {
         },
       },
     });
+    return classroom ? stripPassword(classroom) : null;
   }
 
   async findManaged(managerId: string) {
-    return this.prisma.classroom.findMany({
+    const classrooms = await this.prisma.classroom.findMany({
       where: { managerId },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -91,6 +100,7 @@ export class ClassroomsRepository {
         },
       },
     });
+    return classrooms.map((classroom) => stripPassword(classroom));
   }
 
   async findJoined(userId: string) {

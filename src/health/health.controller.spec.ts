@@ -45,6 +45,35 @@ describe('HealthController', () => {
     expect(controller).toBeDefined();
   });
 
+  describe('check', () => {
+    it('returns health check with database ping indicator', async () => {
+      const mockResult = {
+        status: 'ok' as const,
+        info: { database: { status: 'up' } },
+        error: {},
+        details: { database: { status: 'up' } },
+      };
+      healthCheckService.check.mockImplementation(async (indicators) => {
+        for (const indicator of indicators) {
+          await indicator();
+        }
+        return mockResult;
+      });
+      prismaHealthIndicator.pingCheck.mockResolvedValue({
+        database: { status: 'up' },
+      });
+
+      const result = await controller.check();
+
+      expect(healthCheckService.check).toHaveBeenCalled();
+      expect(prismaHealthIndicator.pingCheck).toHaveBeenCalledWith(
+        'database',
+        prismaService,
+      );
+      expect(result).toEqual(mockResult);
+    });
+  });
+
   describe('live', () => {
     it('returns health check with no indicators', async () => {
       const mockResult = {

@@ -551,6 +551,14 @@ export class AttemptsService {
       if (!attempt) {
         throw new NotFoundException('Attempt not found');
       }
+
+      if (role === Role.EXAM_MANAGER) {
+        if (attempt.exam.managerId !== userId) {
+          throw new ForbiddenException(
+            'Bạn không sở hữu đề thi của lượt làm bài này',
+          );
+        }
+      }
     }
 
     const violations = await this.repo.findViolations(attemptId);
