@@ -4,7 +4,6 @@ import {
   Get,
   Patch,
   Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -34,10 +33,8 @@ export class UsersController {
     description:
       'Missing, invalid, expired or revoked token, or deleted account',
   })
-  async me(@Req() request: AuthenticatedRequest) {
-    const user = await this.usersService.getPublicUserById(request.user.id);
-    if (!user) throw new UnauthorizedException('Account no longer exists');
-    return user;
+  me(@Req() request: AuthenticatedRequest) {
+    return request.user;
   }
 
   @Patch('me')

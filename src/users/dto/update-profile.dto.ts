@@ -19,11 +19,13 @@ export class UpdateProfileDto {
   @ApiPropertyOptional({ example: 'data:image/png;base64,...' })
   @IsOptional()
   @IsString()
+  @MaxLength(2000000, { message: 'Dữ liệu ảnh không được vượt quá 2MB' })
   avatar?: string | null;
 
   @ApiPropertyOptional({ example: 'data:image/jpeg;base64,...' })
   @IsOptional()
   @IsString()
+  @MaxLength(2000000, { message: 'Dữ liệu ảnh không được vượt quá 2MB' })
   cover?: string | null;
 
   @ApiPropertyOptional({ example: 'Đại học Bách Khoa', maxLength: 150 })

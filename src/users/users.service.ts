@@ -5,6 +5,7 @@ import {
 import { Role } from '@prisma/client';
 import { UsersRepository } from './users.repository';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @Injectable()
 export class UsersService {
@@ -22,8 +23,12 @@ export class UsersService {
     return this.usersRepository.findByEmail(email);
   }
 
-  async findAllPublicUsers() {
-    return this.usersRepository.findAll();
+  async findAllPublicUsers(query?: PaginationQueryDto) {
+    return this.usersRepository.findAll(
+      query?.page,
+      query?.limit,
+      query?.search,
+    );
   }
 
   async findPublicUserOrFail(id: string) {

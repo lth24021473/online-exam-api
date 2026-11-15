@@ -1,5 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 import { Role } from '@prisma/client';
 import { UsersService } from './users.service';
 import { UsersRepository } from './users.repository';
@@ -120,6 +122,73 @@ describe('UsersService', () => {
 
       const result = await service.getPublicUserById('unknown-id');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('findAllPublicUsers', () => {
+    it('delegates pagination and search query to repository', async () => {
+      const mockResult = {
+        data: [mockUser],
+        meta: {
+          total: 1,
+          page: 2,
+          limit: 10,
+          totalPages: 1,
+        },
+      };
+      repository.findAll!.mockResolvedValue(mockResult as any);
+
+      const result = await service.findAllPublicUsers({
+        page: 2,
+        limit: 10,
+        search: 'test@example.com',
+      });
+
+      expect(repository.findAll).toHaveBeenCalledWith(2, 10, 'test@example.com');
+      expect(result).toEqual(mockResult);
+    });
+
+    it('uses undefined parameters when query is omitted', async () => {
+      repository.findAll!.mockResolvedValue({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } as any);
+
+      await service.findAllPublicUsers();
+
+      expect(repository.findAll).toHaveBeenCalledWith(undefined, undefined, undefined);
+    });
+  });
+
+  describe('UpdateProfileDto validation', () => {
+    it('accepts avatar and cover within 2,000,000 characters', async () => {
+      const dto = plainToInstance(UpdateProfileDto, {
+        avatar: 'a'.repeat(1000),
+        cover: 'c'.repeat(1000),
+      });
+      const errors = await validate(dto);
+      expect(errors).toHaveLength(0);
+    });
+
+    it('rejects avatar exceeding 2,000,000 characters with custom message', async () => {
+      const dto = plainToInstance(UpdateProfileDto, {
+        avatar: 'a'.repeat(2000001),
+      });
+      const errors = await validate(dto);
+      expect(errors.length).toBeGreaterThan(0);
+      const avatarError = errors.find((e) => e.property === 'avatar');
+      expect(avatarError?.constraints?.maxLength).toBe(
+        'Dữ liệu ảnh không được vượt quá 2MB',
+      );
+    });
+
+    it('rejects cover exceeding 2,000,000 characters with custom message', async () => {
+      const dto = plainToInstance(UpdateProfileDto, {
+        cover: 'c'.repeat(2000001),
+      });
+      const errors = await validate(dto);
+      expect(errors.length).toBeGreaterThan(0);
+      const coverError = errors.find((e) => e.property === 'cover');
+      expect(coverError?.constraints?.maxLength).toBe(
+        'Dữ liệu ảnh không được vượt quá 2MB',
+      );
     });
   });
 });

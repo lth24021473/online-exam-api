@@ -217,7 +217,7 @@ describe('Authentication HTTP flow', () => {
     const response = await me().expect(200);
     expect(response.body).toEqual(registered.body.user);
     expect(response.body).not.toHaveProperty('passwordHash');
-    expect(repository.findById).toHaveBeenCalledWith(savedUser.id);
+    expect(repository.findById).not.toHaveBeenCalled();
     passwordResetTokens.clear();
     passwordResetToken.deleteMany.mockImplementation(async ({ where }) => {
       for (const [key, value] of passwordResetTokens.entries()) {

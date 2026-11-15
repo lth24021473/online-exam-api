@@ -18,6 +18,20 @@ export class HealthController {
     private readonly prisma: PrismaService,
   ) {}
 
+  @Get()
+  @HealthCheck()
+  @ApiOperation({
+    summary: 'Health check for container orchestration and database connectivity',
+  })
+  @ApiOkResponse({
+    description: 'Service is healthy and database is reachable',
+  })
+  check() {
+    return this.health.check([
+      () => this.prismaHealth.pingCheck('database', this.prisma),
+    ]);
+  }
+
   @Get('live')
   @HealthCheck()
   @ApiOperation({ summary: 'Liveness check for container orchestration' })

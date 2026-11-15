@@ -4,6 +4,7 @@ import {
   Param,
   Patch,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,7 @@ import { Roles } from '../auth/roles.decorator';
 import { ParseObjectIdPipe } from '../attempts/parse-object-id.pipe';
 import { UsersService } from './users.service';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @ApiTags('Admin — Users')
 @ApiBearerAuth()
@@ -33,12 +35,12 @@ export class AdminUsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @ApiOperation({ summary: '[ADMIN] List all users' })
-  @ApiOkResponse({ description: 'List of all users (passwordHash excluded)' })
+  @ApiOperation({ summary: '[ADMIN] List all users with pagination and search' })
+  @ApiOkResponse({ description: 'Paginated list of users (passwordHash excluded)' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid token' })
   @ApiForbiddenResponse({ description: 'ADMIN role required' })
-  findAll() {
-    return this.usersService.findAllPublicUsers();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.usersService.findAllPublicUsers(query);
   }
 
   @Get(':id')

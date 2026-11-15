@@ -10,7 +10,7 @@ import { retryWithWriteConflict } from '../database/mongo-conflict-retry';
 import { lockExamStatus } from '../exams/exam-write-conflict';
 import { generateShuffledMapping } from './shuffling';
 
-const examInfo = { select: { id: true, title: true, enableProctoring: true, maxViolations: true } } as const;
+const examInfo = { select: { id: true, title: true, enableProctoring: true, maxViolations: true, managerId: true } } as const;
 
 const gradingQuestionSelect = {
   id: true,
@@ -384,48 +384,50 @@ export class AttemptsRepository {
     return { items, total };
   }
 
-  async recordViolation(
+  recordViolation(
     attemptId: string,
     userId: string,
     type: ViolationType,
     detail?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const attempt = await tx.attempt.findFirst({
-        where: { id: attemptId, userId },
-        include: {
-          exam: {
-            select: { id: true, maxViolations: true, enableProctoring: true },
+    return this.withWriteConflictRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const attempt = await tx.attempt.findFirst({
+          where: { id: attemptId, userId },
+          include: {
+            exam: {
+              select: { id: true, maxViolations: true, enableProctoring: true },
+            },
           },
-        },
-      });
-      if (!attempt) throw new NotFoundException('Attempt not found');
-      if (attempt.status !== AttemptStatus.IN_PROGRESS) {
-        throw new ConflictException('Attempt is not in progress');
-      }
+        });
+        if (!attempt) throw new NotFoundException('Attempt not found');
+        if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+          throw new ConflictException('Attempt is not in progress');
+        }
 
-      const violation = await tx.attemptViolation.create({
-        data: {
-          attemptId,
-          type,
-          detail: detail ? detail.trim() : null,
-        },
-      });
+        const violation = await tx.attemptViolation.create({
+          data: {
+            attemptId,
+            type,
+            detail: detail ? detail.trim() : null,
+          },
+        });
 
-      const updated = await tx.attempt.update({
-        where: { id: attemptId },
-        data: {
-          violationCount: { increment: 1 },
-        },
-      });
+        const updated = await tx.attempt.update({
+          where: { id: attemptId },
+          data: {
+            violationCount: { increment: 1 },
+          },
+        });
 
-      return {
-        violation,
-        violationCount: updated.violationCount,
-        maxViolations: attempt.exam.maxViolations,
-        shouldTerminate: updated.violationCount >= attempt.exam.maxViolations,
-      };
-    });
+        return {
+          violation,
+          violationCount: updated.violationCount,
+          maxViolations: attempt.exam.maxViolations,
+          shouldTerminate: updated.violationCount >= attempt.exam.maxViolations,
+        };
+      }),
+    );
   }
 
   async findViolations(attemptId: string) {
