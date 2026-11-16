@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { AttemptStatus, Prisma, ViolationType } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { AttemptsRepository, AttemptWithExam } from './attempts.repository';
@@ -49,12 +49,13 @@ describe('AttemptsRepository write conflict retries', () => {
       create: jest.fn(),
     },
     attemptAnswer: { upsert: jest.fn(), findMany: jest.fn() },
-    attemptViolation: { create: jest.fn() },
+    attemptViolation: { create: jest.fn(), findMany: jest.fn() },
     question: { findMany: jest.fn() },
   };
   const prisma = {
     $transaction: jest.fn(),
     attempt: { updateMany: jest.fn() },
+    attemptViolation: { findMany: jest.fn() },
   };
   const grade = jest.fn();
   let repository: AttemptsRepository;
@@ -223,23 +224,116 @@ describe('AttemptsRepository write conflict retries', () => {
     });
   });
 
-  describe('recordViolation write conflict retry', () => {
+  describe('recordViolation', () => {
+    const violationFixture = {
+      id: 'violation-1',
+      attemptId: attempt.id,
+      type: ViolationType.TAB_SWITCH,
+      detail: 'Left tab',
+      createdAt: new Date(),
+    };
+
     beforeEach(() => {
       tx.attempt.findFirst.mockResolvedValue(attempt);
-      tx.attemptViolation.create.mockResolvedValue({
-        id: 'violation-1',
-        attemptId: attempt.id,
-        type: ViolationType.TAB_SWITCH,
-        detail: null,
-      });
+      tx.attemptViolation.create.mockResolvedValue(violationFixture);
       tx.attempt.update.mockResolvedValue({
         ...attempt,
         violationCount: 1,
       });
     });
 
+    it('records violation, increments count, and returns shouldTerminate false when count < maxViolations', async () => {
+      const res = await repository.recordViolation(
+        attempt.id,
+        attempt.userId,
+        ViolationType.TAB_SWITCH,
+        '  Left tab  ',
+      );
+
+      expect(tx.attempt.findFirst).toHaveBeenCalledWith({
+        where: { id: attempt.id, userId: attempt.userId },
+        include: {
+          exam: {
+            select: { id: true, maxViolations: true, enableProctoring: true },
+          },
+        },
+      });
+      expect(tx.attemptViolation.create).toHaveBeenCalledWith({
+        data: {
+          attemptId: attempt.id,
+          type: ViolationType.TAB_SWITCH,
+          detail: 'Left tab',
+        },
+      });
+      expect(tx.attempt.update).toHaveBeenCalledWith({
+        where: { id: attempt.id },
+        data: { violationCount: { increment: 1 } },
+      });
+      expect(res).toEqual({
+        violation: violationFixture,
+        violationCount: 1,
+        maxViolations: 3,
+        shouldTerminate: false,
+      });
+    });
+
+    it('returns shouldTerminate true when violationCount reaches maxViolations', async () => {
+      tx.attempt.update.mockResolvedValue({
+        ...attempt,
+        violationCount: 3,
+      });
+
+      const res = await repository.recordViolation(
+        attempt.id,
+        attempt.userId,
+        ViolationType.FULLSCREEN_EXIT,
+      );
+
+      expect(tx.attemptViolation.create).toHaveBeenCalledWith({
+        data: {
+          attemptId: attempt.id,
+          type: ViolationType.FULLSCREEN_EXIT,
+          detail: null,
+        },
+      });
+      expect(res.shouldTerminate).toBe(true);
+      expect(res.violationCount).toBe(3);
+    });
+
+    it('throws NotFoundException if attempt is not found', async () => {
+      tx.attempt.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.recordViolation(
+          'non-existent',
+          attempt.userId,
+          ViolationType.DEVTOOLS_OPEN,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ConflictException if attempt is not IN_PROGRESS', async () => {
+      tx.attempt.findFirst.mockResolvedValue({
+        ...attempt,
+        status: AttemptStatus.SUBMITTED,
+      });
+
+      await expect(
+        repository.recordViolation(
+          attempt.id,
+          attempt.userId,
+          ViolationType.DEVTOOLS_OPEN,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
     it('retries P2034 and succeeds using a fresh operation', async () => {
-      tx.attempt.update.mockRejectedValueOnce(writeConflict());
+      tx.attempt.update
+        .mockRejectedValueOnce(writeConflict())
+        .mockResolvedValue({
+          ...attempt,
+          violationCount: 1,
+        });
 
       const result = await repository.recordViolation(
         attempt.id,
@@ -271,6 +365,36 @@ describe('AttemptsRepository write conflict retries', () => {
         message: expect.stringContaining('Please retry'),
       });
       expect(tx.attempt.update).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('findViolations', () => {
+    it('returns violations ordered by createdAt asc', async () => {
+      const violations = [
+        {
+          id: 'v1',
+          attemptId: attempt.id,
+          type: ViolationType.TAB_SWITCH,
+          detail: 'Left tab',
+          createdAt: new Date('2026-10-04T10:05:00Z'),
+        },
+        {
+          id: 'v2',
+          attemptId: attempt.id,
+          type: ViolationType.FULLSCREEN_EXIT,
+          detail: null,
+          createdAt: new Date('2026-10-04T10:10:00Z'),
+        },
+      ];
+      prisma.attemptViolation.findMany.mockResolvedValue(violations);
+
+      const result = await repository.findViolations(attempt.id);
+
+      expect(prisma.attemptViolation.findMany).toHaveBeenCalledWith({
+        where: { attemptId: attempt.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(result).toEqual(violations);
     });
   });
 });

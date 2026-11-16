@@ -13,6 +13,7 @@ import { ExamsModule } from './exams/exams.module';
 import { QuestionsModule } from './exams/questions/questions.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { HealthModule } from './health/health.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { HealthModule } from './health/health.module';
       },
     ]),
     PrismaModule,
+    QueueModule,
     AuthModule,
     UsersModule,
     ClassroomsModule,

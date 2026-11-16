@@ -149,6 +149,61 @@ describe('AttemptsService - Proctoring', () => {
       expect(res.result.summary.terminatedReason).toBe('EXCEEDED_VIOLATIONS');
       expect(mockRepository.submitInProgress).toHaveBeenCalledTimes(1);
     });
+
+    it('should handle already SUBMITTED attempt gracefully when shouldTerminate is true', async () => {
+      mockRepository.recordViolation.mockResolvedValue({
+        violation: {
+          id: 'v3',
+          attemptId: 'att1',
+          type: ViolationType.FULLSCREEN_EXIT,
+          detail: 'Exited fullscreen',
+          createdAt: new Date(),
+        },
+        violationCount: 3,
+        maxViolations: 3,
+        shouldTerminate: true,
+      } as any);
+
+      const submittedAttempt: any = {
+        id: 'att1',
+        userId: 'user1',
+        examId: 'exam1',
+        status: AttemptStatus.SUBMITTED,
+        submittedAt: new Date(),
+        score: 5,
+        totalQuestions: 2,
+        correctCount: 1,
+        incorrectCount: 1,
+        violationCount: 3,
+        terminatedReason: 'EXCEEDED_VIOLATIONS',
+        exam: {
+          id: 'exam1',
+          title: 'Test Exam',
+          instructions: null,
+          durationMinutes: 30,
+        },
+      };
+
+      mockRepository.findById.mockResolvedValue(submittedAttempt);
+      mockRepository.listQuestionsWithKey.mockResolvedValue([
+        {
+          id: 'q1',
+          position: 0,
+          content: 'Q1',
+          options: [{ id: 'o1', position: 0, content: 'Opt 1', isCorrect: true }],
+        },
+      ] as any);
+      mockRepository.listAnswers.mockResolvedValue([] as any);
+
+      const res = await service.recordViolation('user1', 'att1', {
+        type: ViolationType.FULLSCREEN_EXIT,
+      });
+
+      expect(res.terminated).toBe(true);
+      expect(res.submitted).toBe(true);
+      expect(res.result).toBeDefined();
+      expect(mockRepository.submitInProgress).not.toHaveBeenCalled();
+    });
   });
 
   describe('getViolations', () => {
@@ -255,6 +310,16 @@ describe('AttemptsService - Proctoring', () => {
       const errors = await validate(dto);
       expect(errors.length).toBeGreaterThan(0);
       expect(errors[0].property).toBe('type');
+    });
+
+    it('should fail validation when detail exceeds 500 characters', async () => {
+      const dto = plainToInstance(RecordViolationDto, {
+        type: ViolationType.DEVTOOLS_OPEN,
+        detail: 'a'.repeat(501),
+      });
+      const errors = await validate(dto);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].property).toBe('detail');
     });
   });
 });

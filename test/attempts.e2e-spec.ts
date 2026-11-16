@@ -1,11 +1,18 @@
 import {
   ConflictException,
   INestApplication,
+  NotFoundException,
   ValidationPipe,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { Attempt, AttemptStatus, ExamStatus, Role } from '@prisma/client';
+import {
+  Attempt,
+  AttemptStatus,
+  ExamStatus,
+  Role,
+  ViolationType,
+} from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -37,7 +44,14 @@ type AnswerFixture = {
   updatedAt: Date;
   selectedOption: { position: number };
 };
-type AttemptWithExam = Attempt & { exam: { id: string; title: string } };
+type AttemptWithExam = Attempt & {
+  exam: {
+    id: string;
+    title: string;
+    enableProctoring?: boolean;
+    maxViolations?: number;
+  };
+};
 type Grade = {
   submittedAt: Date;
   score: number;
@@ -73,6 +87,16 @@ type ResultResponse = {
 class InMemoryAttemptsRepository {
   readonly attempts = new Map<string, AttemptWithExam>();
   readonly answers = new Map<string, AnswerFixture[]>();
+  readonly violations = new Map<
+    string,
+    Array<{
+      id: string;
+      attemptId: string;
+      type: ViolationType;
+      detail: string | null;
+      createdAt: Date;
+    }>
+  >();
   readonly exam = {
     id: EXAM_ID,
     title: 'Sample exam',
@@ -81,6 +105,8 @@ class InMemoryAttemptsRepository {
     status: ExamStatus.PUBLISHED as ExamStatus,
     _count: { questions: 2 },
     maxAttempts: 5,
+    enableProctoring: true,
+    maxViolations: 3,
   };
   readonly questions: QuestionFixture[] = [
     {
@@ -171,7 +197,12 @@ class InMemoryAttemptsRepository {
       incorrectCount: null,
       violationCount: 0,
       terminatedReason: null,
-      exam: { id: EXAM_ID, title: this.exam.title },
+      exam: {
+        id: EXAM_ID,
+        title: this.exam.title,
+        enableProctoring: this.exam.enableProctoring,
+        maxViolations: this.exam.maxViolations,
+      },
     };
     this.attempts.set(id, attempt);
     this.answers.set(id, []);
@@ -325,6 +356,43 @@ class InMemoryAttemptsRepository {
         (left, right) => right.startedAt.getTime() - left.startedAt.getTime(),
       );
     return { items: items.slice(skip, skip + take), total: items.length };
+  }
+
+  recordViolation(
+    attemptId: string,
+    userId: string,
+    type: ViolationType,
+    detail?: string,
+  ) {
+    const attempt = this.attempts.get(attemptId);
+    if (!attempt || attempt.userId !== userId) {
+      throw new NotFoundException('Attempt not found');
+    }
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new ConflictException('Attempt is not in progress');
+    }
+    const attemptViolations = this.violations.get(attemptId) ?? [];
+    const violation = {
+      id: (attemptViolations.length + 1).toString(16).padStart(24, '0'),
+      attemptId,
+      type,
+      detail: detail?.trim() || null,
+      createdAt: new Date(),
+    };
+    attemptViolations.push(violation);
+    this.violations.set(attemptId, attemptViolations);
+    attempt.violationCount += 1;
+    const maxViolations = this.exam.maxViolations ?? 3;
+    return {
+      violation,
+      violationCount: attempt.violationCount,
+      maxViolations,
+      shouldTerminate: attempt.violationCount >= maxViolations,
+    };
+  }
+
+  findViolations(attemptId: string) {
+    return this.violations.get(attemptId) ?? [];
   }
 }
 
@@ -803,5 +871,204 @@ describe('Attempts HTTP API (e2e, in-memory persistence)', () => {
     expect(repo.attempts.get(session.attempt.id)?.submittedAt).toEqual(
       deadline,
     );
+  });
+
+  describe('Proctoring and Violations API', () => {
+    it('records violations up to maxViolations, auto-terminates attempt with EXCEEDED_VIOLATIONS and grades result', async () => {
+      const session = await start();
+      const attemptId = session.attempt.id;
+
+      // Save 1 correct answer before any violation
+      await save(attemptId, QUESTION_IDS[0], 1).expect(200);
+
+      // Violation 1: TAB_SWITCH
+      const v1 = await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({
+          type: ViolationType.TAB_SWITCH,
+          detail: 'Left exam tab for 5 seconds',
+        })
+        .expect(200);
+
+      expect(v1.body).toMatchObject({
+        violationCount: 1,
+        maxViolations: 3,
+        terminated: false,
+        submitted: false,
+        result: null,
+      });
+      expect(v1.body.violation).toMatchObject({
+        attemptId,
+        type: ViolationType.TAB_SWITCH,
+        detail: 'Left exam tab for 5 seconds',
+      });
+
+      // Violation 2: DEVTOOLS_OPEN
+      const v2 = await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({
+          type: ViolationType.DEVTOOLS_OPEN,
+          detail: 'F12 pressed',
+        })
+        .expect(200);
+
+      expect(v2.body).toMatchObject({
+        violationCount: 2,
+        maxViolations: 3,
+        terminated: false,
+        submitted: false,
+        result: null,
+      });
+
+      // Still in progress after 2 violations
+      expect(repo.attempts.get(attemptId)?.status).toBe(AttemptStatus.IN_PROGRESS);
+
+      // Violation 3: FULLSCREEN_EXIT reaches maxViolations (3) -> auto-terminates & grades
+      const v3 = await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({
+          type: ViolationType.FULLSCREEN_EXIT,
+          detail: 'Exited fullscreen mode',
+        })
+        .expect(200);
+
+      expect(v3.body).toMatchObject({
+        violationCount: 3,
+        maxViolations: 3,
+        terminated: true,
+        submitted: true,
+      });
+      expect(v3.body.result).toBeDefined();
+      expect(v3.body.result.attempt).toMatchObject({
+        id: attemptId,
+        status: AttemptStatus.SUBMITTED,
+      });
+      expect(v3.body.result.summary).toMatchObject({
+        score: 5,
+        totalQuestions: 2,
+        correctCount: 1,
+        violationCount: 3,
+        terminatedReason: 'EXCEEDED_VIOLATIONS',
+      });
+
+      // Verify repo status
+      const storedAttempt = repo.attempts.get(attemptId);
+      expect(storedAttempt?.status).toBe(AttemptStatus.SUBMITTED);
+      expect(storedAttempt?.terminatedReason).toBe('EXCEEDED_VIOLATIONS');
+
+      // Further save attempts are blocked with 409
+      await save(attemptId, QUESTION_IDS[1], 0).expect(409);
+
+      // Further violation calls on terminated attempt are rejected with 409
+      await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({ type: ViolationType.TAB_SWITCH })
+        .expect(409);
+
+      // Result endpoint shows the terminated attempt with EXCEEDED_VIOLATIONS
+      const resultRes = await request(app.getHttpServer())
+        .get(`/api/v1/attempts/${attemptId}/result`)
+        .auth(studentToken, { type: 'bearer' })
+        .expect(200);
+
+      expect(resultRes.body.summary).toMatchObject({
+        score: 5,
+        violationCount: 3,
+        terminatedReason: 'EXCEEDED_VIOLATIONS',
+      });
+    });
+
+    it('allows student to view own violations and manager to view student violations; blocks others', async () => {
+      const session = await start();
+      const attemptId = session.attempt.id;
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({
+          type: ViolationType.CLIPBOARD_ACTION,
+          detail: 'Copy paste shortcut detected',
+        })
+        .expect(200);
+
+      // Student can get violations
+      const studentView = await request(app.getHttpServer())
+        .get(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .expect(200);
+
+      expect(studentView.body.attemptId).toBe(attemptId);
+      expect(studentView.body.violations).toHaveLength(1);
+      expect(studentView.body.violations[0]).toMatchObject({
+        attemptId,
+        type: ViolationType.CLIPBOARD_ACTION,
+        detail: 'Copy paste shortcut detected',
+      });
+
+      // Manager can view student attempt violations
+      const managerView = await request(app.getHttpServer())
+        .get(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(managerToken, { type: 'bearer' })
+        .expect(200);
+
+      expect(managerView.body.attemptId).toBe(attemptId);
+      expect(managerView.body.violations).toHaveLength(1);
+
+      // Another student receives 404
+      await request(app.getHttpServer())
+        .get(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(otherStudentToken, { type: 'bearer' })
+        .expect(404);
+
+      // Unauthenticated receives 401
+      await request(app.getHttpServer())
+        .get(`/api/v1/attempts/${attemptId}/violations`)
+        .expect(401);
+    });
+
+    it('validates RecordViolationDto: rejects invalid types and oversized detail', async () => {
+      const session = await start();
+      const attemptId = session.attempt.id;
+
+      // Invalid violation type
+      await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({ type: 'CHEATING_METHOD_UNKNOWN' })
+        .expect(400);
+
+      // Detail exceeding 500 chars
+      await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(studentToken, { type: 'bearer' })
+        .send({
+          type: ViolationType.TAB_SWITCH,
+          detail: 'x'.repeat(501),
+        })
+        .expect(400);
+    });
+
+    it('denies exam managers from recording violations and hides other students attempts', async () => {
+      const session = await start();
+      const attemptId = session.attempt.id;
+
+      // Manager cannot record violations (only student role allowed)
+      await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(managerToken, { type: 'bearer' })
+        .send({ type: ViolationType.TAB_SWITCH })
+        .expect(403);
+
+      // Other student gets 404 trying to record violation on someone else's attempt
+      await request(app.getHttpServer())
+        .post(`/api/v1/attempts/${attemptId}/violations`)
+        .auth(otherStudentToken, { type: 'bearer' })
+        .send({ type: ViolationType.TAB_SWITCH })
+        .expect(404);
+    });
   });
 });

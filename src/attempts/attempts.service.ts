@@ -526,10 +526,15 @@ export class AttemptsService {
     let result: any = null;
     if (res.shouldTerminate) {
       const attempt = await this.repo.findById(attemptId);
-      if (attempt && attempt.status === AttemptStatus.IN_PROGRESS) {
-        const finalized = await this.finalize(attempt, 'EXCEEDED_VIOLATIONS');
-        submitted = true;
-        result = await this.buildResult(finalized);
+      if (attempt) {
+        const finalized =
+          attempt.status === AttemptStatus.IN_PROGRESS
+            ? await this.finalize(attempt, 'EXCEEDED_VIOLATIONS')
+            : attempt;
+        if (finalized) {
+          submitted = finalized.status === AttemptStatus.SUBMITTED;
+          result = await this.buildResult(finalized);
+        }
       }
     }
 

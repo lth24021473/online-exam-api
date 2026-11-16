@@ -11,8 +11,12 @@ services:
       - .env
     environment:
       DATABASE_URL: mongodb://mongo:27017/online_exam?replicaSet=rs0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       mongo:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:
@@ -42,5 +46,22 @@ services:
       timeout: 10s
       retries: 12
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   mongo_data:
+  redis_data:
