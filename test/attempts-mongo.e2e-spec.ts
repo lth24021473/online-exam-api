@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { AttemptStatus, ExamStatus, Role } from '@prisma/client';
+import { AttemptStatus, ExamStatus, Role, ViolationType } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
@@ -378,5 +378,65 @@ describeMongo('Attempts with real MongoDB', () => {
         data: { status: ExamStatus.PUBLISHED, closedAt: null },
       });
     }
+  });
+
+  it('records violations in real MongoDB, persists AttemptViolation records, and terminates on exceeding maxViolations', async () => {
+    const session = await start().expect(201);
+    const attemptId = session.body.attempt.id;
+    await save(attemptId, questionIds[0], 1).expect(200);
+
+    // Violation 1
+    const v1 = await request(app.getHttpServer())
+      .post(`/api/v1/attempts/${attemptId}/violations`)
+      .auth(token, { type: 'bearer' })
+      .send({ type: ViolationType.TAB_SWITCH, detail: 'Left tab' })
+      .expect(200);
+    expect(v1.body.violationCount).toBe(1);
+    expect(v1.body.terminated).toBe(false);
+
+    // Violation 2
+    const v2 = await request(app.getHttpServer())
+      .post(`/api/v1/attempts/${attemptId}/violations`)
+      .auth(token, { type: 'bearer' })
+      .send({ type: ViolationType.DEVTOOLS_OPEN, detail: 'F12 opened' })
+      .expect(200);
+    expect(v2.body.violationCount).toBe(2);
+    expect(v2.body.terminated).toBe(false);
+
+    // Violation 3 -> Terminate (maxViolations = 3)
+    const v3 = await request(app.getHttpServer())
+      .post(`/api/v1/attempts/${attemptId}/violations`)
+      .auth(token, { type: 'bearer' })
+      .send({ type: ViolationType.FULLSCREEN_EXIT, detail: 'Exited fullscreen' })
+      .expect(200);
+    expect(v3.body.violationCount).toBe(3);
+    expect(v3.body.terminated).toBe(true);
+    expect(v3.body.submitted).toBe(true);
+    expect(v3.body.result.summary.terminatedReason).toBe('EXCEEDED_VIOLATIONS');
+
+    // Verify stored attempt in MongoDB
+    const stored = await prisma.attempt.findUniqueOrThrow({
+      where: { id: attemptId },
+    });
+    expect(stored.status).toBe(AttemptStatus.SUBMITTED);
+    expect(stored.terminatedReason).toBe('EXCEEDED_VIOLATIONS');
+    expect(stored.violationCount).toBe(3);
+
+    // Verify stored AttemptViolation records in MongoDB
+    const storedViolations = await prisma.attemptViolation.findMany({
+      where: { attemptId },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(storedViolations).toHaveLength(3);
+    expect(storedViolations[0].type).toBe(ViolationType.TAB_SWITCH);
+    expect(storedViolations[1].type).toBe(ViolationType.DEVTOOLS_OPEN);
+    expect(storedViolations[2].type).toBe(ViolationType.FULLSCREEN_EXIT);
+
+    // Verify GET /attempts/:id/violations
+    const getRes = await request(app.getHttpServer())
+      .get(`/api/v1/attempts/${attemptId}/violations`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(getRes.body.violations).toHaveLength(3);
   });
 });
