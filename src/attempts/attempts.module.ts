@@ -4,6 +4,7 @@ import { PrismaModule } from '../database/prisma.module';
 import { QueueModule } from '../queue/queue.module';
 import { AttemptSchedulerService } from './attempt-scheduler.service';
 import { AttemptExpiryWorker } from './attempt-expiry.worker';
+import { AttemptExpirySupervisor } from './attempt-expiry.supervisor';
 import { AttemptsController } from './attempts.controller';
 import { AttemptsRepository } from './attempts.repository';
 import { AttemptsService } from './attempts.service';
@@ -21,6 +22,7 @@ import {
     AttemptsRepository,
     AttemptSchedulerService,
     AttemptExpiryWorker,
+    AttemptExpirySupervisor,
     StandardGradingStrategy,
     {
       provide: GRADING_STRATEGY,
@@ -31,6 +33,7 @@ import {
     AttemptsService,
     AttemptSchedulerService,
     AttemptExpiryWorker,
+    AttemptExpirySupervisor,
     StandardGradingStrategy,
     GRADING_STRATEGY,
   ],
