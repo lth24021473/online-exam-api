@@ -6,6 +6,8 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Attempt, AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { RecordViolationDto } from './dto/record-violation.dto';
 import { AttemptsRepository } from './attempts.repository';
@@ -16,6 +18,10 @@ import {
   MAX_SCORE,
 } from './grading';
 import type { GradingStrategy } from './grading';
+import {
+  QUEUE_ATTEMPT_EXPIRY,
+  JOB_EXPIRE_ATTEMPT,
+} from '../queue/queue.constants';
 
 export { MAX_SCORE };
 
@@ -41,6 +47,9 @@ export class AttemptsService {
     @Optional()
     @Inject(GRADING_STRATEGY)
     gradingStrategy?: GradingStrategy,
+    @Optional()
+    @InjectQueue(QUEUE_ATTEMPT_EXPIRY)
+    private readonly attemptExpiryQueue?: Queue,
   ) {
     this.gradingStrategy = gradingStrategy ?? new StandardGradingStrategy();
   }
@@ -133,6 +142,22 @@ export class AttemptsService {
       await this.finalize(attempt);
       return this.start(userId, examId, userRole);
     }
+
+    if (!resumed && this.attemptExpiryQueue) {
+      const delay = Math.max(0, attempt.deadlineAt.getTime() - Date.now());
+      await this.attemptExpiryQueue.add(
+        JOB_EXPIRE_ATTEMPT,
+        {
+          attemptId: attempt.id,
+          examId: attempt.examId,
+        },
+        {
+          delay,
+          jobId: `expire-${attempt.id}`,
+        },
+      );
+    }
+
     return { resumed, ...(await this.buildSession(attempt, exam)) };
   }
 
@@ -242,9 +267,9 @@ export class AttemptsService {
     return this.buildResult(attempt);
   }
 
-  /** Finalize a single expired attempt (used by the background auto-finalizer). */
+  /** Finalize a single expired attempt (used by the background auto-finalizer & worker). */
   async finalizeExpiredAttempt(attempt: Attempt) {
-    return this.finalize(attempt);
+    return this.finalize(attempt, 'TIME_EXPIRED');
   }
 
   async getHistory(
@@ -400,7 +425,10 @@ export class AttemptsService {
           terminatedReason ??
           (now > current.deadlineAt ? 'TIME_EXPIRED' : 'NORMAL_SUBMIT');
         return {
-          submittedAt: now > current.deadlineAt ? current.deadlineAt : now,
+          submittedAt:
+            reason === 'TIME_EXPIRED' || now > current.deadlineAt
+              ? current.deadlineAt
+              : now,
           correctCount,
           incorrectCount,
           score,
