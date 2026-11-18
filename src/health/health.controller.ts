@@ -1,12 +1,19 @@
 import { Controller, Get } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   HealthCheck,
   HealthCheckService,
+  HealthIndicatorService,
   PrismaHealthIndicator,
 } from '@nestjs/terminus';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 @ApiTags('Health')
 @SkipThrottle()
@@ -16,19 +23,40 @@ export class HealthController {
     private readonly health: HealthCheckService,
     private readonly prismaHealth: PrismaHealthIndicator,
     private readonly prisma: PrismaService,
+    private readonly healthIndicatorService: HealthIndicatorService,
+    private readonly redisService: RedisService,
   ) {}
+
+  private checkRedis() {
+    return this.healthIndicatorService
+      .check('redis')
+      .attempt(async () => {
+        const response = await this.redisService.ping();
+        if (response !== 'PONG') {
+          throw new Error(
+            `Unexpected Redis ping response: ${String(response)}`,
+          );
+        }
+      })
+      .withTimeout(2000);
+  }
 
   @Get()
   @HealthCheck()
   @ApiOperation({
-    summary: 'Health check for container orchestration and database connectivity',
+    summary:
+      'Health check for container orchestration, database, and Redis connectivity',
   })
   @ApiOkResponse({
-    description: 'Service is healthy and database is reachable',
+    description: 'Service is healthy and dependencies are reachable',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Service or dependencies are unhealthy',
   })
   check() {
     return this.health.check([
       () => this.prismaHealth.pingCheck('database', this.prisma),
+      () => this.checkRedis(),
     ]);
   }
 
@@ -44,14 +72,19 @@ export class HealthController {
   @HealthCheck()
   @ApiOperation({
     summary:
-      'Readiness check for container orchestration and database connectivity',
+      'Readiness check for container orchestration, database, and Redis connectivity',
   })
   @ApiOkResponse({
-    description: 'Service is ready to accept traffic and database is reachable',
+    description:
+      'Service is ready to accept traffic and dependencies are reachable',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Service or dependencies are unhealthy',
   })
   ready() {
     return this.health.check([
       () => this.prismaHealth.pingCheck('database', this.prisma),
+      () => this.checkRedis(),
     ]);
   }
 }

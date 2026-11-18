@@ -43,7 +43,23 @@ export class UsersService {
 
   async updateProfile(id: string, dto: UpdateProfileDto) {
     await this.findPublicUserOrFail(id);
-    const updated = await this.usersRepository.updateProfile(id, dto);
+    const updateData: {
+      fullName?: string;
+      avatar?: string | null;
+      cover?: string | null;
+      workplace?: string | null;
+      currentResidence?: string | null;
+    } = {};
+
+    if (dto.fullName !== undefined) updateData.fullName = dto.fullName;
+    if (dto.avatar !== undefined) updateData.avatar = dto.avatar;
+    if (dto.cover !== undefined) updateData.cover = dto.cover;
+    if (dto.workplace !== undefined) updateData.workplace = dto.workplace;
+    if (dto.currentResidence !== undefined) {
+      updateData.currentResidence = dto.currentResidence;
+    }
+
+    const updated = await this.usersRepository.updateProfile(id, updateData);
     const {
       passwordHash: _passwordHash,
       authVersion: _authVersion,

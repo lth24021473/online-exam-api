@@ -3,10 +3,12 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { Attempt, AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
+import { ExamLeaderboardService } from '../exams/materialized-views/exam-leaderboard.service';
 import { RecordViolationDto } from './dto/record-violation.dto';
 import { AttemptsRepository } from './attempts.repository';
 import { isShuffledMapping } from './shuffling';
@@ -34,6 +36,7 @@ type OwnedAttempt = NonNullable<
 
 @Injectable()
 export class AttemptsService {
+  private readonly logger = new Logger(AttemptsService.name);
   private readonly gradingStrategy: GradingStrategy;
 
   constructor(
@@ -41,6 +44,8 @@ export class AttemptsService {
     @Optional()
     @Inject(GRADING_STRATEGY)
     gradingStrategy?: GradingStrategy,
+    @Optional()
+    private readonly leaderboardService?: ExamLeaderboardService,
   ) {
     this.gradingStrategy = gradingStrategy ?? new StandardGradingStrategy();
   }
@@ -385,7 +390,7 @@ export class AttemptsService {
   }
 
   private async finalize(attempt: Attempt, terminatedReason?: string) {
-    return this.repo.submitInProgress(
+    const finalized = await this.repo.submitInProgress(
       attempt.id,
       attempt.userId,
       (questions, answers, current) => {
@@ -408,6 +413,38 @@ export class AttemptsService {
         };
       },
     );
+
+    this.triggerLeaderboardUpdate(finalized);
+
+    return finalized;
+  }
+
+  private triggerLeaderboardUpdate(attempt: Attempt): void {
+    const leaderboardService = this.leaderboardService;
+    if (
+      !leaderboardService ||
+      attempt.score === null ||
+      attempt.score === undefined
+    ) {
+      return;
+    }
+
+    (async () => {
+      try {
+        await leaderboardService.updateLeaderboardOnSubmission(attempt);
+        await leaderboardService.recalculateSummaryStats(attempt.examId);
+      } catch (error) {
+        this.logger.error(
+          `Failed to update leaderboard or summary stats for attempt ${attempt.id}: ${error instanceof Error ? error.message : String(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    })().catch((unhandled) => {
+      this.logger.error(
+        `Unhandled error in leaderboard background task for attempt ${attempt.id}: ${unhandled instanceof Error ? unhandled.message : String(unhandled)}`,
+        unhandled instanceof Error ? unhandled.stack : undefined,
+      );
+    });
   }
 
   private async buildResult(attempt: OwnedAttempt) {

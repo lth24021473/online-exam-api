@@ -130,4 +130,37 @@ describe('UsersRepository', () => {
       expect(result.meta.limit).toBe(100);
     });
   });
+
+  describe('updateProfile', () => {
+    it('updates user profile URLs via prisma.user.update', async () => {
+      const payload = {
+        avatar: 'https://s3.example.com/avatars/user-123.jpg',
+        cover: 'https://s3.example.com/covers/user-123.jpg',
+      };
+      const updated = { id: 'u1', ...payload };
+      mockPrismaService.user.update.mockResolvedValue(updated);
+
+      const result = await repository.updateProfile('u1', payload);
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: payload,
+      });
+      expect(result).toEqual(updated);
+    });
+
+    it('allows clearing avatar and cover by passing null', async () => {
+      const payload = { avatar: null, cover: null };
+      const updated = { id: 'u1', ...payload };
+      mockPrismaService.user.update.mockResolvedValue(updated);
+
+      const result = await repository.updateProfile('u1', payload);
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { avatar: null, cover: null },
+      });
+      expect(result).toEqual(updated);
+    });
+  });
 });

@@ -13,11 +13,14 @@ import { ExamsModule } from './exams/exams.module';
 import { QuestionsModule } from './exams/questions/questions.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { HealthModule } from './health/health.module';
+import { StorageModule } from './storage/storage.module';
+import { validate } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate,
     }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
@@ -35,6 +38,7 @@ import { HealthModule } from './health/health.module';
     QuestionsModule,
     AttemptsModule,
     HealthModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [

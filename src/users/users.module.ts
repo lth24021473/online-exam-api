@@ -5,9 +5,10 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { AuthSecurityModule } from '../auth/auth-security.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
-  imports: [PrismaModule, AuthSecurityModule],
+  imports: [PrismaModule, AuthSecurityModule, StorageModule],
   controllers: [UsersController, AdminUsersController],
 
   providers: [UsersRepository, UsersService],

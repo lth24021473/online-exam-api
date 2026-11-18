@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
+import { ExamStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ExamResultsQueryDto } from './dto/exam-results-query.dto';
 import { lockExamStatus, retryExamWrite } from './exam-write-conflict';
@@ -226,167 +226,65 @@ export class ExamsRepository {
     );
   }
 
-  listResults(examId: string, query: ExamResultsQueryDto) {
-    const where: Prisma.AttemptWhereInput = {
-      examId,
-      ...(query.status ? { status: query.status } : {}),
+  async listResults(examId: string, query: ExamResultsQueryDto) {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+    const skip =
+      (query as { skip?: number })?.skip !== undefined
+        ? (query as { skip?: number }).skip!
+        : (page - 1) * limit;
+    const take =
+      (query as { take?: number })?.take !== undefined
+        ? (query as { take?: number }).take!
+        : limit;
+
+    const [items, total, stats] = await Promise.all([
+      this.prisma.examLeaderboard.findMany({
+        where: { examId },
+        skip,
+        take,
+        orderBy: [{ bestScore: 'desc' }, { durationSeconds: 'asc' }],
+      }),
+      this.prisma.examLeaderboard.count({ where: { examId } }),
+      this.prisma.examSummaryStats.findUnique({ where: { examId } }),
+    ]);
+
+    const itemsWithRank = items.map((item, idx) => ({
+      rank: skip + idx + 1,
+      ...item,
+    }));
+
+    const statsFallback = {
+      totalAttempts: 0,
+      submittedCount: 0,
+      inProgressCount: 0,
+      cancelledCount: 0,
+      averageScore: null,
+      highestScore: null,
+      lowestScore: null,
     };
-    return this.prisma.$transaction(async (tx) => {
-      const [data, total, counts, scores, submittedForLeaderboard] =
-        await Promise.all([
-          tx.attempt.findMany({
-            where,
-            skip: (query.page - 1) * query.limit,
-            take: query.limit,
-            orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
-            select: {
-              id: true,
-              status: true,
-              startedAt: true,
-              deadlineAt: true,
-              submittedAt: true,
-              cancelledAt: true,
-              score: true,
-              totalQuestions: true,
-              correctCount: true,
-              incorrectCount: true,
-              violationCount: true,
-              terminatedReason: true,
-              violations: {
-                select: {
-                  id: true,
-                  type: true,
-                  detail: true,
-                  createdAt: true,
-                },
-                orderBy: { createdAt: 'asc' },
-              },
-              user: { select: { id: true, email: true, fullName: true } },
-            },
-          }),
-          tx.attempt.count({ where }),
-          tx.attempt.groupBy({
-            by: ['status'],
-            where: { examId },
-            _count: { _all: true },
-          }),
-          tx.attempt.aggregate({
-            where: { examId, status: AttemptStatus.SUBMITTED },
-            _avg: { score: true },
-            _min: { score: true },
-            _max: { score: true },
-          }),
-          tx.attempt.findMany({
-            where: {
-              examId,
-              status: AttemptStatus.SUBMITTED,
-              score: { not: null },
-            },
-            select: {
-              id: true,
-              userId: true,
-              score: true,
-              startedAt: true,
-              submittedAt: true,
-              user: {
-                select: {
-                  id: true,
-                  email: true,
-                  fullName: true,
-                  avatar: true,
-                },
-              },
-            },
-          }),
-        ]);
-      const count = (status: AttemptStatus) =>
-        counts.find((row) => row.status === status)?._count._all ?? 0;
 
-      const bestByUser = new Map<
-        string,
-        {
-          userId: string;
-          fullName: string;
-          email: string;
-          avatar: string | null;
-          bestScore: number;
-          attemptId: string;
-          durationSeconds: number;
-          submittedAt: Date | null;
+    const safeStats = stats
+      ? {
+          ...stats,
+          inProgressCount: 0,
+          cancelledCount: 0,
         }
-      >();
+      : statsFallback;
 
-      for (const att of submittedForLeaderboard) {
-        const score = att.score ?? 0;
-        const durationSeconds =
-          att.submittedAt && att.startedAt
-            ? Math.max(
-                0,
-                Math.floor(
-                  (att.submittedAt.getTime() - att.startedAt.getTime()) / 1000,
-                ),
-              )
-            : 0;
-        const current = bestByUser.get(att.userId);
-        if (!current) {
-          bestByUser.set(att.userId, {
-            userId: att.userId,
-            fullName: att.user.fullName,
-            email: att.user.email,
-            avatar: att.user.avatar,
-            bestScore: score,
-            attemptId: att.id,
-            durationSeconds,
-            submittedAt: att.submittedAt,
-          });
-        } else if (
-          score > current.bestScore ||
-          (score === current.bestScore &&
-            durationSeconds < current.durationSeconds)
-        ) {
-          bestByUser.set(att.userId, {
-            userId: att.userId,
-            fullName: att.user.fullName,
-            email: att.user.email,
-            avatar: att.user.avatar,
-            bestScore: score,
-            attemptId: att.id,
-            durationSeconds,
-            submittedAt: att.submittedAt,
-          });
-        }
-      }
-
-      const leaderboard = Array.from(bestByUser.values())
-        .sort(
-          (a, b) =>
-            b.bestScore - a.bestScore ||
-            a.durationSeconds - b.durationSeconds,
-        )
-        .map((entry, index) => ({
-          rank: index + 1,
-          ...entry,
-        }));
-
-      return {
-        data,
-        leaderboard,
-        meta: {
-          page: query.page,
-          limit: query.limit,
-          total,
-          totalPages: Math.ceil(total / query.limit),
-        },
-        summary: {
-          totalAttempts: counts.reduce((sum, row) => sum + row._count._all, 0),
-          inProgressCount: count(AttemptStatus.IN_PROGRESS),
-          submittedCount: count(AttemptStatus.SUBMITTED),
-          cancelledCount: count(AttemptStatus.CANCELLED),
-          averageScore: scores._avg.score,
-          highestScore: scores._max.score,
-          lowestScore: scores._min.score,
-        },
-      };
-    });
+    return {
+      items: itemsWithRank,
+      total,
+      stats: safeStats,
+      data: itemsWithRank,
+      leaderboard: itemsWithRank,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 0,
+      },
+      summary: safeStats,
+    };
   }
 }
