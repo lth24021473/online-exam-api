@@ -1,253 +1,200 @@
-# Kế Hoạch & Danh Sách Nhiệm Vụ Triển Khai — Online Exam System
-*(Tasks Roadmap: Backend & Frontend)*
+# 🗺️ LỘ TRÌNH PHÁT TRIỂN & PHÂN CÔNG NHÓM — ONLINE EXAM SYSTEM
+*(Toàn diện: Nâng cấp Kiến trúc Cloud Design Patterns & Lộ trình Tính năng)*
 
-Tài liệu này tổng hợp toàn bộ danh sách các module công việc và nhiệm vụ (tasks) cần thực hiện cho cả **Backend (`online-exam-api`)** và **Frontend (`online-exam-front`)**.
-
-Hệ thống được chia thành **3 Giai đoạn (Phases)** theo thứ tự ưu tiên từ cốt lõi đến nâng cao, đi theo từng "lát cắt tính năng" (Feature Slice) để đảm bảo làm đến đâu chạy mượt mà và kiểm thử được ngay đến đó.
+> **Phiên bản:** 2.0 (Kiến trúc Điện toán Đám mây chuẩn Azure Architecture Center)  
+> **Phân chia:** 3 Thành viên làm việc song song trên các nhánh độc lập.  
+> **Định hướng chiến lược:** Ưu tiên triển khai dứt điểm **Giai đoạn Cloud Architecture** để đảm bảo khả năng chịu tải và độ ổn định cao, sau đó tiếp tục bổ sung các module tính năng nghiệp vụ còn lại.
 
 ---
 
-## 🛡️ Phân Chia Trách Nhiệm Git & Quy Trình Làm Việc (Git & Workflow Policy)
+## 🛡️ Phân Chia Trách Nhiệm Git & Quy Trình Làm Việc Nhóm
 
 > [!IMPORTANT]
-> **Quy định bắt buộc đối với AI Assistant:**
+> **Quy định bắt buộc đối với AI Assistant & Các Thành viên:**
 > 1. **Phân nhánh & Thao tác Git thuộc toàn quyền của Người dùng:**
->    * Người dùng sẽ tự quản lý toàn bộ việc phân nhánh (`checkout`, tạo branch, `pull`, `merge`, `push`, đồng bộ remote).
->    * AI **tuyệt đối không tự ý can thiệp** vào phân nhánh, không tự chuyển nhánh hay cố gắng kéo/đồng bộ code.
->    * **Không cần bận tâm về nhánh `main` ở local:** Người dùng không yêu cầu đồng bộ `main` local, quan trọng là code trên GitHub/web đầy đủ.
+>    * Mỗi thành viên chủ động làm việc trên nhánh riêng của mình (ví dụ: `feature/tv1-cache-resiliency`, `feature/tv2-async-queue`, `feature/tv3-cqrs-monitoring`).
+>    * AI **tuyệt đối không tự ý can thiệp** vào phân nhánh, không tự chuyển nhánh hay cố gắng kéo/đồng bộ remote.
 > 2. **Trách nhiệm của AI Assistant:**
->    * **Chỉ tập trung vào công việc (Implementation & Testing):** Triển khai code, sửa lỗi, viết test và hoàn thiện task trực tiếp trên nhánh làm việc hiện tại mà người dùng đã đứng sẵn.
->    * Chỉ chạy các lệnh Git đọc trạng thái (`git status`, `git diff`, `git log`, đọc file) khi cần khảo sát.
->    * Sau khi hoàn tất và pass toàn bộ test, báo cáo kết quả chi tiết để người dùng tự kiểm tra và quản lý commit/push/PR.
+>    * Tập trung tuyệt đối vào việc thực thi code, sửa lỗi, viết unit/integration tests và nghiệm thu trực tiếp trên nhánh làm việc hiện tại mà người dùng đã đứng sẵn.
+>    * Sau khi hoàn tất và pass toàn bộ test suites, báo cáo kết quả chi tiết để người dùng tự kiểm tra và quản lý commit/push/PR.
 
 ---
 
-## 📊 Bảng Theo Dõi Tiến Độ Tổng Quan (Progress Tracker)
+## 📊 BẢNG MA TRẬN PHÂN CHIA CÔNG VIỆC 3 THÀNH VIÊN
 
-| Mã Task | Tên Nhiệm vụ | Phạm vi | Trạng thái | Ghi chú |
-| :--- | :--- | :--- | :---: | :--- |
-| **`TASK-01`** | **Khép kín luồng Quên / Đặt lại mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | SMTP, Token 15p, băm bcrypt, tăng `authVersion`, UI 2 bước |
-| **`CORE-01`** | **Chính sách Quyền Admin: Không xóa User** | Backend & Frontend | ✅ **Hoàn thành** | Đã xóa `DELETE /admin/users/:id` khỏi Swagger, Controller & UI |
-| **`TASK-02`** | **Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu** | Backend & Frontend | ✅ **Hoàn thành** | `PATCH /users/me`, `POST /auth/change-password` |
-| **`TASK-03`** | **Tự động gia hạn Token (Silent Refresh)** | Backend & Frontend | ✅ **Hoàn thành** | Cặp đôi AccessToken/RefreshToken, `POST /auth/refresh` |
-| **`TASK-04`** | **Worker tự động chốt bài quá hạn (Cron)** | Backend & Frontend | ✅ **Hoàn thành** | `@nestjs/schedule` Cron 10s `AttemptSchedulerService`, bỏ `while(true)` ở `GET /exams/:id/results`, UI auto-submit khi hết giờ |
-| **`TASK-05`** | **Tách thuật toán Chấm điểm (Strategy Pattern)** | Backend | ✅ **Hoàn thành** | `GradingStrategy` & `StandardGradingStrategy`, DI vào `AttemptsService` |
-| **`TASK-06`** | **Rate Limiting & Health Check Container** | Backend & Frontend | ✅ **Hoàn thành** | Throttler chống brute-force, Terminus `/health/live`, `/health/ready` (ping MongoDB) |
-| **`TASK-07`** | **Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat)** | Backend & Frontend | ✅ **Hoàn thành** | Backend: Hoàn thành lưu hoán vị & tính điểm; Frontend: Đã tương thích sẵn (không cần đổi code) |
-| **`TASK-08`** | **Giám sát Trình duyệt (Tab switch, Fullscreen)** | Backend & Frontend | ⏳ *Chờ xử lý* | Ghi nhận `AttemptViolation`, cảnh báo popup |
-| **`TASK-09`** | **Đa dạng hóa câu hỏi (Nhiều đáp án, Đúng/Sai)** | Backend & Frontend | ⏳ *Chờ xử lý* | Enum `QuestionType`, Partial credit chấm điểm |
-| **`TASK-10`** | **Công thức Toán KaTeX & Code Lập trình** | Frontend | ⏳ *Chờ xử lý* | Render LaTeX `$ ... $`, highlight cú pháp code |
-| **`TASK-11`** | **Giới hạn số lượt thi (`maxAttempts`) & Mã đề** | Backend & Frontend | ⏳ *Chờ xử lý* | Chặn làm lại quá giới hạn, nhập mã code vào thi |
-| **`TASK-12`** | **Tích hợp Redis Caching (Cache-Aside)** | Backend | ⏳ *Chờ xử lý* | Cache danh sách đề mở, RevokedToken Set $O(1)$ |
-| **`TASK-13`** | **Upload Ảnh/Tệp lên Object Storage (Valet Key)** | Backend & Frontend | ⏳ *Chờ xử lý* | MinIO/S3 Pre-signed URL, tải ảnh trực tiếp |
-| **`TASK-14`** | **Quản lý Lớp học (Classrooms & Members)** | Backend & Frontend | ⏳ *Chờ xử lý* | Mã lớp 6 ký tự, mật khẩu lớp, duyệt thành viên |
-| **`TASK-15`** | **Giao Đề thi theo Lớp (Assignments & Tasks)** | Backend & Frontend | ⏳ *Chờ xử lý* | Tab Nhiệm vụ trong Profile, đề thi cô lập theo lớp |
-| **`TASK-16`** | **Giám sát Phòng thi Trực tiếp (WebSocket)** | Backend & Frontend | ⏳ *Chờ xử lý* | Socket.io Live Proctoring, trạng thái realtime |
-| **`TASK-17`** | **Xuất Bảng điểm Excel & Import Đề từ Word/Excel**| Backend & Frontend | ⏳ *Chờ xử lý* | `exceljs`, `mammoth` nạp nhanh 50 câu trắc nghiệm |
+| Thành viên | Phạm vi Phụ trách chính | Cloud Design Patterns Áp dụng | Số Task | Trạng thái |
+| :--- | :--- | :--- | :---: | :---: |
+| **Thành viên 1** | Tầng Cache, Xác thực nhanh, Chống xung đột khóa & Giới hạn lưu lượng | • Cache-Aside Pattern (Redis Auth & Exam)<br>• Retry Pattern (Exponential Backoff + Jitter)<br>• Fine-grained Locking & Partial Unique Index<br>• Throttling & Gatekeeper Pattern | 5 tasks | ⏳ Đang triển khai |
+| **Thành viên 2**<br>*(Bạn đảm nhiệm)* | Tiến trình thi tự động, Xử lý tải cao khi lưu bài & Nộp bài đồng loạt | • Scheduler Agent Supervisor (BullMQ Delayed Job)<br>• Supervisor Fail-safe Cron Job<br>• Queue-Based Load Leveling (Write-Behind Buffer)<br>• Asynchronous Submit & Consistency Flush | 5 tasks | 🎯 **Ưu tiên thực hiện ngay** |
+| **Thành viên 3** | Tách biệt Đọc/Ghi kết quả, Báo cáo thống kê, Lưu trữ ảnh & Giám sát | • CQRS Pattern (Command & Query Separation)<br>• Materialized View Pattern (Leaderboard & Stats)<br>• Valet Key Pattern (S3/R2/MinIO Presigned URLs)<br>• Health Endpoint Monitoring & Security Limit | 5 tasks | ⏳ Đang triển khai |
 
 ---
 
-# 🚀 GIAI ĐOẠN 1: Khép kín Luồng Cốt lõi & Chuẩn hóa Hệ thống (Ưu tiên số 1)
-*Mục tiêu: Xóa bỏ dữ liệu giả (`localStorage`), sửa các lỗi thiết kế hạ tầng nghiêm trọng, hoàn thiện chu trình người dùng cơ bản.*
+# ☁️ PHẦN 1: KẾ HOẠCH NÂNG CẤP KIẾN TRÚC CLOUD (ƯU TIÊN SỐ 1)
 
-### 📌 MODULE 1: AUTH & QUẢN LÝ TÀI KHOẢN (USER & PROFILE)
+```mermaid
+flowchart TD
+    subgraph TV1["Thành viên 1: Cache, Security & Resilience"]
+        TV1_1["TV1-01: Hạ tầng Redis & RedisService"]
+        TV1_2["TV1-02: Retry Backoff Jitter & Lock Exam"]
+        TV1_3["TV1-03: Cache-Aside JWT & Revoked Tokens"]
+        TV1_4["TV1-04: Cache-Aside Published Exams"]
+        TV1_5["TV1-05: Throttling & Gatekeeper API"]
+    end
 
-#### `TASK-01`: Khép kín luồng Quên / Đặt lại mật khẩu (Forgot & Reset Password) — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Thư viện gửi mail `nodemailer` với `MailModule` và `MailService`.
-    *   Model `PasswordResetToken` trong Prisma MongoDB (lưu `email`, `tokenHash`, `expiresAt`, index TTL 15 phút).
-    *   API `POST /api/v1/auth/forgot-password`: Kiểm tra email, sinh token ngẫu nhiên, lưu SHA-256 hash và gửi link/mã về email người dùng (chế độ Dev in ra console nếu chưa cấu hình SMTP).
-    *   API `POST /api/v1/auth/reset-password`: Xác thực token hợp lệ, băm mật khẩu mới bằng `bcrypt` (12 rounds), tăng `authVersion` để hủy toàn bộ phiên cũ trên các thiết bị khác, xóa token đã dùng (chống Replay attack).
-*   🎨 **Frontend:**
-    *   Trang `src/pages/ForgotPasswordPage.tsx` luồng 2 bước:
-        *   Bước 1: Form nhập email $\rightarrow$ gửi yêu cầu nhận mã xác thực.
-        *   Bước 2: Form nhập mã xác nhận (Token từ email), mật khẩu mới & xác nhận mật khẩu (tự động nhận token & email từ query params khi bấm link email).
-    *   Cấu hình dịch thông báo lỗi tiếng Việt trong `axios.ts` và thông báo thành công xanh trên `LoginPage.tsx`.
-*   ✅ **Nghiệm thu:** 44/44 Unit tests Backend pass, 15/15 Playwright Auth tests Frontend pass.
+    subgraph TV2["Thành viên 2 (Bạn): Async Queue & Load Leveling"]
+        TV2_1["TV2-01: Hạ tầng BullMQ Job Queue"]
+        TV2_2["TV2-02: Scheduler Agent Supervisor (Delayed Job)"]
+        TV2_3["TV2-03: Fail-safe Supervisor Cron (Cứu bài)"]
+        TV2_4["TV2-04: Write-Behind Buffer Lưu đáp án"]
+        TV2_5["TV2-05: Flush Buffer & Chấm điểm Đồng bộ"]
+    end
 
-#### `CORE-01`: Chính sách Quản trị viên không có quyền xóa User — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:** Gỡ bỏ hoàn toàn route `@Delete(':id')` trong `AdminUsersController` để xóa khỏi Swagger UI; xóa hàm `remove()` trong `UsersService` và `deleteById()` trong `UsersRepository`.
-*   🎨 **Frontend:** Gỡ bỏ nút "Xóa tài khoản" và dialog xác nhận xóa trong `AdminUsersPage.tsx`, chỉ giữ lại chức năng đổi vai trò (Role assignment).
-*   ✅ **Nghiệm thu:** Swagger UI không còn endpoint `DELETE`, gọi trực tiếp trả `404 Not Found`, 14/14 tests Admin Frontend pass.
+    subgraph TV3["Thành viên 3: CQRS, Storage & Monitoring"]
+        TV3_1["TV3-01: Materialized View Leaderboard & Stats"]
+        TV3_2["TV3-02: CQRS Read API GET /exams/:id/results"]
+        TV3_3["TV3-03: Valet Key Pre-signed Upload S3/MinIO"]
+        TV3_4["TV3-04: Siết chặt Payload DTO 100KB"]
+        TV3_5["TV3-05: Health Check Dual MongoDB + Redis"]
+    end
 
-#### `TASK-02`: Đồng bộ Hồ sơ cá nhân lên Server & Đổi mật khẩu chủ động — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Bổ sung các trường vào model `User` trong Prisma: `workplace`, `currentResidence`, `avatar`, `cover`.
-    *   Viết API `PATCH /api/v1/users/me`: Cập nhật `fullName`, `workplace`, `currentResidence` của tài khoản hiện tại.
-    *   Viết API `POST /api/v1/auth/change-password`: Kiểm tra mật khẩu cũ (`bcrypt.compare`) $\rightarrow$ đổi sang mật khẩu mới $\rightarrow$ tăng `authVersion` đăng xuất phiên cũ.
-*   🎨 **Frontend:**
-    *   Tại `src/pages/ProfilePage.tsx`: Chuyển hàm `handleProfileSave` từ lưu `localStorage` sang gọi API `PATCH /users/me`.
-    *   Tạo Modal/Form **"Đổi mật khẩu"**: Gồm 3 ô (Mật khẩu hiện tại, Mật khẩu mới, Xác nhận mật khẩu mới) gắn vào tab Chỉnh sửa tài khoản hoặc Cài đặt.
-*   ✅ **Nghiệm thu:** Đổi tên/nơi làm việc ở máy tính A, đăng nhập máy tính B dữ liệu vẫn được lưu nguyên vẹn; đổi được mật khẩu chủ động an toàn; 8/8 tests ChangePassword & 4/4 tests UsersService pass.
-
-#### `TASK-03`: Cơ chế Tự động gia hạn Token (Silent Refresh Token) — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Sửa API `/auth/login` và `/auth/register`: Cấp cặp đôi `accessToken` (hạn 15 phút) và `refreshToken` (hạn 7 ngày).
-    *   Tạo API `POST /api/v1/auth/refresh`: Nhận `refreshToken`, kiểm tra tính hợp lệ và cấp mới `accessToken`, `refreshToken` và `user`.
-    *   `JwtAuthGuard` chủ động chặn việc dùng nhầm `refreshToken` trên các API nghiệp vụ yêu cầu `accessToken`.
-*   🎨 **Frontend:**
-    *   Tại `src/api/axios.ts`: Cấu hình Axios Interceptor bắt mã lỗi `401`.
-    *   Tự động gọi ngầm `/auth/refresh` lấy token mới rồi gửi lại request cũ mà người dùng không hề hay biết (không bị đá văng ra login khi đang làm bài).
-*   ✅ **Nghiệm thu:** Cấp cặp Access Token (15m) & Refresh Token (7d); API `POST /auth/refresh` gia hạn token tự động; JwtAuthGuard chặn lạm dụng token; 15/15 unit tests pass.
+    TV1_1 -.->|Cung cấp Redis Host| TV2_1
+    TV1_1 -.->|Cung cấp Redis Host| TV3_5
+    TV2_4 --> TV2_5
+    TV2_2 --> TV2_3
+    TV3_1 --> TV3_2
+```
 
 ---
 
-### 📌 MODULE 2: HẠ TẦNG THI & CHỐNG NGHẼN (EXAM CORE & RESILIENCY)
+## 👤 BẢNG PHÂN CÔNG: THÀNH VIÊN 1
+*Phạm vi: Tầng Cache, Xác thực nhanh, Chống xung đột khóa & Giới hạn lưu lượng*
 
-#### `TASK-04`: Tiến trình Worker tự động chốt bài thi quá hạn (Background Auto-finalizer) — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Cài đặt `@nestjs/schedule` và kích hoạt `ScheduleModule.forRoot()` trong `AppModule`.
-    *   Tạo service `AttemptSchedulerService` chạy Cron định kỳ mỗi 10 giây (`@Cron('*/10 * * * * *')`).
-    *   Tự động quét các `Attempt` có `status = IN_PROGRESS` và `deadlineAt <= now()` (kèm index `[status, deadlineAt]`) $\rightarrow$ tự động tính điểm và chuyển sang `SUBMITTED`.
-    *   **Loại bỏ hoàn toàn** vòng lặp `while(true)` chốt lười (`finalizeExpiredForExam`) trong API `GET /exams/:id/results`.
-*   🎨 **Frontend:**
-    *   Tại `src/pages/TakeExamPage.tsx`: Khi đồng hồ đếm ngược về `00:00:00`, khóa toàn bộ tương tác, hiển thị popup: *"Đã hết giờ làm bài! Hệ thống đang tự động thu bài và tính điểm..."*, sau đó tự động chuyển hướng sang trang kết quả `/attempts/:id/result`.
-*   ✅ **Nghiệm thu:** Học sinh tắt máy/mất mạng khi hết giờ thì bài thi vẫn tự động được chấm trên server đúng từng giây; Frontend tự động khóa làm bài và điều hướng mượt mà sang trang kết quả khi hết thời gian; 8/8 tests scheduler & 134/134 unit tests pass.
-
-#### `TASK-05`: Tách thuật toán Chấm điểm (Strategy Pattern) — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Tạo interface `GradingStrategy` với phương thức `calculateScore(questions, answers, totalQuestions?)`.
-    *   Cài đặt `StandardGradingStrategy` (công thức chia đều điểm hiện tại, validation 1 đáp án đúng).
-    *   Inject Strategy vào `AttemptsService` thay cho đoạn code hardcode trước đây, sẵn sàng cho việc mở rộng các dạng chấm điểm khác ở Pha 2 (điểm trừ, partial credit).
-*   🎨 **Frontend:** Không ảnh hưởng giao diện.
-*   ✅ **Nghiệm thu:** 10/10 tests `StandardGradingStrategy`, 4/4 tests `AttemptsService - Grading Strategy Integration`, 16/16 tests `attempts.e2e-spec.ts` pass 100%.
-
-#### `TASK-06`: Bảo vệ API với Rate Limiting & Giám sát Sức khỏe Container — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Cài đặt `@nestjs/throttler`: Gắn chặn brute-force cho `/auth/login` (tối đa 5 lần/phút) và giới hạn gọi `/attempts/:id/answers/:id` (tối đa 5 lần/giây/user với custom `getUserTracker`).
-    *   Cài đặt `@nestjs/terminus`: Mở route `/health/live` và `/health/ready` (ping MongoDB qua `PrismaHealthIndicator`), hỗ trợ cả route trực tiếp và route qua prefix `/api/v1/health/*`. Cập nhật healthcheck container trong `docker-compose.yml`.
-*   🎨 **Frontend:**
-    *   Bắt lỗi `HTTP 429 Too Many Requests` trong Axios interceptor và hiển thị thông báo tiếng Việt: *"Bạn đang thao tác quá nhanh, vui lòng thử lại sau vài giây!"*.
-*   ✅ **Nghiệm thu:** 3/3 tests `health.controller.spec.ts`, 7/7 tests `health-and-throttler.e2e-spec.ts` pass, 12/12 Playwright tests `axios-client.spec.ts` pass, toàn bộ 151 unit tests và 81 e2e tests backend pass 100%.
+| Mã Task | Tên Task | Mục tiêu & Quy trình tóm tắt | Nghiệm thu |
+| :--- | :--- | :--- | :---: |
+| **`TV1-01`** | **Hạ tầng Redis & Module Cache Type-Safe** | Bổ sung service `redis:7-alpine` vào `docker-compose.yml`. Cài `ioredis`, xây dựng `RedisModule` và `RedisService` (`get`, `set`, `del`, `setWithExpiryAt`). Validate biến env `REDIS_HOST`, `REDIS_PORT`. | 0/4 tests |
+| **`TV1-02`** | **Retry Pattern Jitter & Loại bỏ Khóa thô** | Sửa `retryWithWriteConflict` áp dụng Full Jitter: `rand(0, min(500, base * 2^attempt))` với 5 lần thử. Xóa `lockExamStatus` trong `AttemptsRepository.createOrResume`. Thay bằng Partial Unique Index `{ userId: 1, examId: 1 }` với filter `status: IN_PROGRESS`. | 0/4 tests |
+| **`TV1-03`** | **Cache-Aside Xác thực JWT & Revoked Tokens** | `TokenRevocationService` ghi `revoked:{tokenHash}` vào Redis với `EXAT`. `JwtAuthGuard` cache thông tin user `user:auth:{userId}` (15 phút). Invalidation ngay khi đổi quyền/xóa user. | 0/4 tests |
+| **`TV1-04`** | **Cache-Aside Đề thi PUBLISHED & Câu hỏi** | Cache 2 view: `exam:student:{examId}` (ẩn đáp án) và `exam:grading:{examId}` (có đáp án). Đọc cache ở `ExamsService.findOne` và `AttemptsService.buildSession`. Invalidate khi sửa/đóng đề. | 0/4 tests |
+| **`TV1-05`** | **Throttling & Gatekeeper Pattern (Redis)** | Cài `@nestjs/throttler` và `throttler-storage-redis`. Phân tầng: Auth (5/phút/IP), Lớp học (10/phút/IP), Lưu bài (60/phút/User), Chung (120/phút/IP). Trả về HTTP 429. | 0/4 tests |
 
 ---
 
-# 🛡️ GIAI ĐOẠN 2: Tối ưu Hiệu năng, Mở rộng Đề & Chống Gian lận (Pha 2)
-*Mục tiêu: Đủ sức gánh hàng nghìn thí sinh thi đồng thời và tổ chức thi nghiêm túc.*
+## 👤 BẢNG PHÂN CÔNG: THÀNH VIÊN 2 (BẠN ĐẢM NHIỆM CHÍNH)
+*Phạm vi: Tiến trình thi tự động, Xử lý tải cao khi lưu bài & Nộp bài đồng loạt*
 
-### 📌 MODULE 3: CHỐNG GIAN LẬN & TRẢI NGHIỆM LÀM BÀI
-
-#### `TASK-07`: Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat) — [✅ ĐÃ HOÀN THÀNH]
-*   ⚙️ **Backend:**
-    *   Bổ sung trường `shuffledMapping Json?` vào `Attempt` trong `prisma/schema.prisma`.
-    *   Cài đặt thuật toán xáo trộn Fisher-Yates Knuth với số ngẫu nhiên an toàn mật mã (`randomInt` từ `node:crypto`) trong `src/attempts/shuffling.ts`.
-    *   Khi học sinh bắt đầu làm bài (`POST /exams/:id/attempts`): Tạo bản sao thứ tự câu hỏi và thứ tự đáp án (A, B, C, D) đã được xáo ngẫu nhiên riêng cho lượt làm bài đó và lưu vào `Attempt.shuffledMapping`.
-    *   Khi học sinh tiếp tục lượt thi (`resumed: true`): Giữ nguyên thứ tự câu hỏi và đáp án đã xáo trộn, ánh xạ đáp án đã lưu về đúng vị trí hiển thị của học sinh.
-    *   Khi chọn đáp án (`PUT /attempts/:attemptId/answers/:questionId`): Tự động quy đổi vị trí hiển thị (0, 1, 2, 3) sang đúng `Option.id` gốc trong DB.
-    *   Khi xem kết quả (`GET /attempts/:attemptId/result`): Hiển thị danh sách câu hỏi và lựa chọn theo đúng thứ tự mà học sinh đã làm, chỉ rõ đáp án đã chọn và đáp án đúng. Hỗ trợ fallback cho các lượt thi cũ không có `shuffledMapping`.
-*   🎨 **Frontend:**
-    *   Đã tương thích sẵn với cấu trúc API (`session.questions` và `session.answers`): Giao diện `TakeExamPage.tsx` tự động hiển thị câu hỏi và đáp án theo đúng thứ tự xáo trộn mà server trả về mà **không cần sửa hay commit thêm code mới ở repo Frontend**.
-*   ✅ **Nghiệm thu:** Hai học sinh cùng mở 1 đề thi thì câu số 1 và vị trí các đáp án của 2 người hoàn toàn khác nhau; 6/6 tests `shuffling.spec.ts`, 6/6 tests `attempts-shuffling.spec.ts`, 13/13 tests `attempts.repository.spec.ts`, toàn bộ 54 unit tests module attempts pass 100%.
-
-#### `TASK-08`: Cơ chế Giám sát Gian lận trên Trình duyệt (Browser Anti-cheat)
-*   ⚙️ **Backend:**
-    *   Thêm vào `Attempt`: `violationCount` (Int, mặc định 0) và lưu bảng log vi phạm `AttemptViolation`.
-    *   Tạo API `POST /attempts/:id/violations`: Nhận loại vi phạm (chuyển tab, thoát fullscreen, mở DevTools). Nếu vượt quá số lần cho phép (`maxViolations`) $\rightarrow$ tự động thu bài và đánh dấu `terminatedReason = 'EXCEEDED_VIOLATIONS'`.
-*   🎨 **Frontend (`TakeExamPage.tsx`):**
-    *   Yêu cầu chế độ Toàn màn hình (**Fullscreen**) trước khi bấm bắt đầu làm bài.
-    *   Lắng nghe sự kiện `visibilitychange`, `window.onblur` và phím tắt mở DevTools (F12, Ctrl+Shift+I).
-    *   Bật popup cảnh báo giật cấp: *"Cảnh báo: Bạn vừa rời khỏi màn hình thi (Lần 1/3). Nếu tiếp tục vi phạm, bài thi sẽ bị thu hồi!"*.
-*   ✅ **Nghiệm thu:** Học sinh nhảy tab sang Google tìm kiếm sẽ bị hệ thống ghi vết và cảnh báo trực tiếp.
+| Mã Task | Tên Task | Mục tiêu & Quy trình tóm tắt | Nghiệm thu |
+| :--- | :--- | :--- | :---: |
+| **`TV2-01`** | **Hạ tầng Hàng đợi BullMQ nền tảng** | Cài `@nestjs/bullmq` & `bullmq`. Tạo `src/queue/queue.module.ts` kết nối Redis. Thiết lập 2 queue chính: `attempt-expiry-queue` và `answer-save-queue`. Cấu hình Exponential Backoff Retry, Dead-Letter Queue (DLQ). | ✅ **Hoàn thành (8/8 tests)** |
+| **`TV2-02`** | **Scheduler Agent Supervisor: Delayed Job** | Trong `AttemptsService.start`: tính `delay = deadlineAt - now` và đẩy Delayed Job vào `attempt-expiry-queue`. Tạo `attempt-expiry.worker.ts`: tự động thu bài, chấm điểm, đánh dấu `TIME_EXPIRED` khi hết giờ. Xóa bỏ logic chốt lười cũ. | ✅ **Hoàn thành (12/12 tests)** |
+| **`TV2-03`** | **Supervisor Fail-safe Cron Job Quét cứu bài** | Tạo `attempt-expiry.supervisor.ts` dùng `@Cron('*/1 * * * *')` (1 phút/lần). Quét tối đa 50 lượt thi `IN_PROGRESS` có `deadlineAt <= now()` để cứu các bài rớt job do worker crash. Ghi log giám sát. | ✅ **Hoàn thành (14/14 tests)** |
+| **`TV2-04`** | **Write-Behind Buffer: Lưu đáp án siêu tốc** | `AttemptsService.saveAnswer`: Lưu trực tiếp `{ [qid]: optionId }` vào Redis Hash `attempt:{id}:answers` (latency < 5ms), trả HTTP 200 ngay. Đẩy job nhẹ vào `answer-save-queue` để worker gom mẻ ghi MongoDB (Load Leveling). | ✅ **Hoàn thành (34/34 tests)** |
+| **`TV2-05`** | **Đồng bộ Dữ liệu Đệm & Nộp bài Bất đồng bộ** | `AttemptsService.submit`: Flush/Upsert toàn bộ đáp án mới nhất từ Redis Hash vào MongoDB trước khi chấm điểm. Chấm điểm qua snapshot hoàn chỉnh. Xóa Redis Hash sau khi hoàn tất để thu hồi RAM. | ⏳ Chờ xử lý |
 
 ---
 
-### 📌 MODULE 4: ĐA DẠNG CÂU HỎI & NỘI DUNG ĐA PHƯƠNG TIỆN
+## 👤 BẢNG PHÂN CÔNG: THÀNH VIÊN 3
+*Phạm vi: Tách biệt Đọc/Ghi kết quả, Báo cáo thống kê, Lưu trữ ảnh & Giám sát*
 
-#### `TASK-09`: Đa dạng hóa loại câu hỏi (Nhiều đáp án, Đúng/Sai)
+| Mã Task | Tên Task | Mục tiêu & Quy trình tóm tắt | Nghiệm thu |
+| :--- | :--- | :--- | :---: |
+| **`TV3-01`** | **Materialized View Leaderboard & Exam Stats** | Thêm model `ExamLeaderboard` và `ExamSummaryStats` vào Prisma Schema với index tối ưu `[examId, bestScore desc, durationSeconds asc]`. Viết script khởi tạo dữ liệu thống kê ban đầu. | 0/4 tests |
+| **`TV3-02`** | **CQRS Read-Side: Tái cấu trúc GET Results** | Tạo `exam-leaderboard.service.ts` lắng nghe bài thi hoàn tất để Atomic Upsert sang Read Model. Tái cấu trúc `ExamsRepository.listResults`: bỏ kéo toàn bộ vào RAM, phân trang chuẩn $O(1)$ từ Read Collection. | 0/5 tests |
+| **`TV3-03`** | **Valet Key: Pre-signed Upload S3/MinIO** | Cài `@aws-sdk/client-s3` và `@aws-sdk/s3-request-presigner`. Tạo `StorageModule` & `StorageService`. API `POST /users/me/upload-url` sinh presigned URL tải file trực tiếp từ browser, giới hạn 2MB (jpeg, png, webp). | 0/5 tests |
+| **`TV3-04`** | **Siết chặt DTO Profile & Express Payload Limit** | Thay thế kiểm tra Base64 cũ trong `UpdateProfileDto` bằng `@IsUrl()`. Hạ giới hạn `express.json` và `urlencoded` trong `main.ts` từ 10MB xuống `100kb`. Chặn DoS qua body payload nặng. | 0/4 tests |
+| **`TV3-05`** | **Health Endpoint Dual-Monitoring (Mongo + Redis)** | Mở rộng `HealthController`: kiểm tra song song `PrismaHealthIndicator` và Redis PING. Trả về 200 khi cả hai hoạt động bình thường, 503 khi một bên mất kết nối. Cập nhật healthcheck Docker Compose. | 0/4 tests |
+
+---
+
+# 🚀 PHẦN 2: LỘ TRÌNH TÍNH NĂNG ỨNG DỤNG (FEATURE BACKLOG)
+*(Các tính năng nền tảng đã hoàn thành & Danh sách các task bạn sẽ tự bổ sung song song)*
+
+### 1. Bảng Trạng Thái Toàn Bộ Feature Tasks
+
+| Mã Task | Tên Nhiệm vụ | Trạng thái hiện tại | Phân loại & Hướng xử lý |
+| :--- | :--- | :---: | :--- |
+| **`TASK-01`** | Khép kín luồng Quên / Đặt lại mật khẩu | ✅ **Hoàn thành** | Đã nghiệm thu (SMTP, Token 15p, bcrypt) |
+| **`CORE-01`** | Chính sách Quyền Admin: Không xóa User | ✅ **Hoàn thành** | Đã nghiệm thu (Gỡ bỏ DELETE User) |
+| **`TASK-02`** | Lưu hồ sơ cá nhân lên Server & Đổi mật khẩu | ✅ **Hoàn thành** | Đã nghiệm thu (PATCH /users/me, change-password) |
+| **`TASK-03`** | Tự động gia hạn Token (Silent Refresh) | ✅ **Hoàn thành** | Đã nghiệm thu (JWT Refresh Token 7d) |
+| **`TASK-04`** | Worker tự động chốt bài quá hạn (Cron 10s) | 🔄 **Đã chuyển đổi** | **Thay thế hoàn toàn bằng `TV2-02` & `TV2-03`** (BullMQ Delayed Job + Supervisor) |
+| **`TASK-05`** | Tách thuật toán Chấm điểm (Strategy Pattern) | ✅ **Hoàn thành** | Đã nghiệm thu (`StandardGradingStrategy`) |
+| **`TASK-06`** | Rate Limiting & Health Check Container cũ | 🔄 **Đã chuyển đổi** | **Chuyển giao cho TV1 (`TV1-05`) & TV3 (`TV3-05`)** |
+| **`TASK-07`** | Xáo trộn Đề thi và Đáp án (Shuffle Anti-cheat) | ✅ **Hoàn thành** | Đã nghiệm thu (Fisher-Yates shuffling) |
+| **`TASK-08`** | Giám sát Trình duyệt (Browser Anti-cheat) | ✅ **Hoàn thành** | Đã nghiệm thu (Fullscreen, tab switch, timeline) |
+| **`TASK-12`** | Tích hợp Redis Caching (Cache-Aside cũ) | 🔄 **Đã chuyển đổi** | **Chuyển giao cho TV1 (`TV1-01`, `TV1-03`, `TV1-04`)** |
+| **`TASK-13`** | Upload Ảnh lên Object Storage (Valet Key cũ) | 🔄 **Đã chuyển đổi** | **Chuyển giao cho TV3 (`TV3-03`, `TV3-04`)** |
+| **`TASK-09`** | Đa dạng hóa câu hỏi (Nhiều đáp án, Đúng/Sai) | ⏳ *Tự làm song song* | Enum `QuestionType`, Partial credit chấm điểm |
+| **`TASK-10`** | Công thức Toán KaTeX & Code Lập trình | ⏳ *Tự làm song song* | Render LaTeX `$ ... $`, highlight cú pháp code |
+| **`TASK-11`** | Giới hạn số lượt thi (`maxAttempts`) & Mã đề | ⏳ *Tự làm song song* | Chặn làm lại quá giới hạn, nhập mã code vào thi |
+| **`TASK-14`** | Quản lý Lớp học (Classrooms & Members) | ⏳ *Tự làm song song* | Mã lớp 6 ký tự, mật khẩu lớp, duyệt thành viên |
+| **`TASK-15`** | Giao Đề thi theo Lớp (Assignments & Tasks) | ⏳ *Tự làm song song* | Tab Nhiệm vụ trong Profile, đề thi cô lập theo lớp |
+| **`TASK-16`** | Giám sát Phòng thi Trực tiếp (WebSocket) | ⏳ *Tự làm song song* | Socket.io Live Proctoring, trạng thái realtime |
+| **`TASK-17`** | Xuất Bảng điểm Excel & Import Đề Word/Excel | ⏳ *Tự làm song song* | `exceljs`, `mammoth` nạp nhanh 50 câu trắc nghiệm |
+
+---
+
+### 2. Chi Tiết Các Task Tính Năng Bạn Tự Triển Khai Tiếp (Song song / Sau Cloud)
+
+#### 📝 `TASK-09`: Đa dạng hóa loại câu hỏi (Nhiều đáp án, Đúng/Sai)
 *   ⚙️ **Backend:**
     *   Thêm enum `QuestionType`: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`.
     *   Cập nhật `GradingStrategy` cho dạng nhiều đáp án: Tính điểm theo tỷ lệ số ý đúng đã chọn (Partial Credit).
 *   🎨 **Frontend:**
     *   **Soạn đề (`ManagerQuestionForm.tsx`):** Thêm dropdown chọn Loại câu hỏi; cho phép tích chọn nhiều đáp án đúng cho `MULTIPLE_CHOICE`.
-    *   **Làm bài (`TakeExamPage.tsx`):** Hiển thị Checkbox hình vuông cho câu nhiều đáp án đúng; Radio hình tròn cho câu 1 đáp án; nút gạt cho câu Đúng/Sai.
-*   ✅ **Nghiệm thu:** Tạo và làm được đề thi kết hợp cả trắc nghiệm đơn, trắc nghiệm nhiều lựa chọn và Đúng/Sai.
+    *   **Làm bài (`TakeExamPage.tsx`):** Hiển thị Checkbox hình vuông cho câu nhiều đáp án; Radio hình tròn cho câu 1 đáp án; nút gạt cho câu Đúng/Sai.
 
-#### `TASK-10`: Hỗ trợ Công thức Toán học LaTeX & Code Lập trình
-*   ⚙️ **Backend:**
-    *   Cho phép lưu chuỗi định dạng Markdown và công thức LaTeX trong trường `Question.content` và `Option.content`.
-*   🎨 **Frontend:**
-    *   Tích hợp thư viện **KaTeX** (`katex`) để tự động render các biểu thức toán học nằm giữa cặp ký tự `$ ... $` hoặc `$$ ... $$` (ví dụ: `$\sqrt{x^2 + y^2}$`).
-    *   Tích hợp thư viện highlight code (`prismjs`) hiển thị các đoạn mã nguồn có màu cú pháp rõ ràng.
-*   ✅ **Nghiệm thu:** Đề thi toán, lý, hóa và lập trình hiển thị công thức và code chuyên nghiệp, không bị vỡ giao diện.
+#### 📝 `TASK-10`: Hỗ trợ Công thức Toán học KaTeX & Code Lập trình
+*   ⚙️ **Backend:** Cho phép lưu chuỗi định dạng Markdown và công thức LaTeX trong `Question.content` và `Option.content`.
+*   🎨 **Frontend:** Tích hợp **KaTeX** tự động render biểu thức `$ ... $` / `$$ ... $$`; tích hợp thư viện highlight code hiển thị syntax trực quan.
 
-#### `TASK-11`: Cấu hình Giới hạn Lượt thi & Khung giờ đóng mở đề
-*   ⚙️ **Backend:**
-    *   Bổ sung trường vào `Exam`: `maxAttempts` (Int, mặc định 1), `opensAt`, `closesAt`.
-    *   Khi gọi `POST /exams/:id/attempts`: Kiểm tra nếu số bài thi của user $\ge$ `maxAttempts` $\rightarrow$ chặn (`403 Forbidden`). Kiểm tra khung giờ thi hợp lệ.
-*   🎨 **Frontend:**
-    *   Giao diện tạo đề: Thêm ô nhập "Số lần thi tối đa" và khung giờ mở/đóng.
-    *   Giao diện chi tiết đề: Hiển thị số lượt thi còn lại của học sinh, nếu hết lượt thì vô hiệu hóa nút vào thi.
-*   ✅ **Nghiệm thu:** Học sinh thi đủ số lần không thể vào thi lại; đề chưa mở hoặc đã quá giờ đóng không thể bắt đầu bài làm mới.
+#### 📝 `TASK-11`: Cấu hình Giới hạn Lượt thi & Khung giờ đóng mở đề
+*   ⚙️ **Backend:** Thêm `maxAttempts`, `opensAt`, `closesAt` vào `Exam`. Validate khi `POST /exams/:id/attempts`.
+*   🎨 **Frontend:** Form cấu hình giới hạn lượt thi; giao diện chi tiết đề hiển thị số lượt thi còn lại của học sinh.
 
----
+#### 📝 `TASK-14` & `TASK-15`: Hệ sinh thái Lớp học (Classrooms & Assignments)
+*   ⚙️ **Backend:** Model `Classroom`, `ClassroomMember`. Liên kết `Exam` với `classroomId`. Phân quyền làm bài theo thành viên lớp.
+*   🎨 **Frontend:** Màn hình `/classes`: Tạo lớp, tham gia lớp bằng mã 6 ký tự; danh sách đề thi riêng của lớp.
 
-### 📌 MODULE 5: HẠ TẦNG ĐỆM REDIS & LƯU TRỮ TỆP
+#### 📝 `TASK-16`: Giám sát Phòng thi Trực tiếp (Live Proctoring WebSocket)
+*   ⚙️ **Backend:** WebSocket Gateway (`ExamProctorGateway`) với heartbeat và sự kiện vi phạm realtime.
+*   🎨 **Frontend:** Dashboard giám thị `/manage/exams/:id/live` hiển thị lưới thí sinh theo thời gian thực.
 
-#### `TASK-12`: Tích hợp Redis Caching (Cache-Aside Pattern)
-*   ⚙️ **Backend:**
-    *   Thêm service `redis:7-alpine` vào `docker-compose.yml`.
-    *   Cấu hình `Cache-Aside` cho đề thi: Danh sách đề thi đã `PUBLISHED` được lưu trên Redis. Khi Manager sửa/đóng đề thì tự động xóa cache (`DEL exam:{id}`).
-    *   Chuyển danh sách `RevokedToken` từ MongoDB sang Redis Set để kiểm tra token trong $O(1)$.
-*   🎨 **Frontend:** Không ảnh hưởng giao diện (tốc độ tải đề nhanh hơn rõ rệt).
-*   ✅ **Nghiệm thu:** Tải đề thi không còn tốn I/O của MongoDB; kiểm tra token đăng xuất tức thì dưới 1ms.
-
-#### `TASK-13`: Upload Tệp & Ảnh lên Object Storage (Valet Key Pattern)
-*   ⚙️ **Backend:**
-    *   Cấu hình MinIO (hoặc S3) trên Docker.
-    *   Viết API `POST /api/v1/media/presigned-url`: Sinh đường dẫn upload có chữ ký tạm thời (Pre-signed URL).
-*   🎨 **Frontend:**
-    *   Component upload ảnh (Avatar, Ảnh câu hỏi): Gửi file trực tiếp từ trình duyệt lên MinIO/S3 bằng Pre-signed URL, không gửi file nặng qua API NestJS.
-*   ✅ **Nghiệm thu:** Upload được avatar và ảnh câu hỏi mượt mà, lưu trữ tập trung trên Object Storage.
+#### 📝 `TASK-17`: Xuất Bảng điểm & Nhập Đề thi từ Excel/Word
+*   ⚙️ **Backend:** Tích hợp `exceljs` xuất báo cáo `.xlsx` và `mammoth` bóc tách câu hỏi từ `.docx`.
+*   🎨 **Frontend:** Nút xuất Excel bảng điểm và modal kéo thả file đề thi mẫu.
 
 ---
 
-# 🏫 GIAI ĐOẠN 3: Lớp học (LMS), Giám sát Realtime & Mở rộng (Pha 3)
-*Mục tiêu: Hoàn thiện hệ sinh thái đào tạo toàn diện, phục vụ kỳ thi lớn.*
+# 🎯 PHẦN 3: KẾ HOẠCH HÀNH ĐỘNG CHI TIẾT CHO BẠN (THÀNH VIÊN 2)
 
-### 📌 MODULE 6: QUẢN LÝ LỚP HỌC & GIAO BÀI (CLASSROOMS & LMS)
+### Kế hoạch Triển khai 5 Tasks Cloud (Step-by-Step):
 
-#### `TASK-14`: Quản lý Lớp học (Classrooms & Members)
-*   ⚙️ **Backend:**
-    *   Tạo model `Classroom` (Tên, Mã `code` 6 ký tự, mật khẩu lớp, `managerId`).
-    *   Tạo model `ClassroomMember` (liên kết `userId` và `classroomId`).
-    *   APIs: Tạo lớp, Lấy danh sách lớp, Tham gia lớp bằng code + mật khẩu, Rời lớp, Loại học sinh khỏi lớp.
-*   🎨 **Frontend:**
-    *   Trang `/classes` và `/classes/:classId`:
-        *   Giáo viên: Có nút "Tạo lớp học mới", quản lý danh sách học sinh, kick học sinh.
-        *   Học sinh: Có nút "Tham gia lớp" $\rightarrow$ nhập code 6 ký tự và mật khẩu.
-*   ✅ **Nghiệm thu:** Giáo viên tạo lớp gửi mã cho học sinh, học sinh nhập mã để vào lớp.
+```
+Bước 1 [TV2-01]: Cài đặt BullMQ & QueueModule
+  ├── npm install @nestjs/bullmq bullmq ioredis
+  ├── Xây dựng src/queue/queue.module.ts
+  └── Đăng ký 2 queues: 'attempt-expiry-queue' & 'answer-save-queue'
 
-#### `TASK-15`: Giao Đề thi theo Lớp học (Assignments & Tasks)
-*   ⚙️ **Backend:**
-    *   Liên kết `Exam` với `classroomId` (nếu null là đề công khai, có ID là đề nội bộ lớp).
-    *   Phân quyền: Chỉ học sinh là thành viên lớp mới có quyền truy cập và làm đề thi của lớp đó.
-*   🎨 **Frontend:**
-    *   Trang chi tiết lớp: Hiển thị danh sách đề thi riêng của lớp.
-    *   Trang Dashboard/Hồ sơ: Hiển thị danh sách nhiệm vụ bài thi được giao kèm deadline.
-*   ✅ **Nghiệm thu:** Đề thi được bảo mật theo từng lớp, học sinh bên ngoài không thể truy cập đề lớp khác.
+Bước 2 [TV2-02]: Scheduler Agent Supervisor (Delayed Jobs)
+  ├── Khi AttemptsService.start -> Push delayed job { attemptId, examId } với delay = deadlineAt - now
+  ├── Xây dựng attempt-expiry.worker.ts lắng nghe và chấm điểm tự động
+  └── Gỡ bỏ logic chốt lười cũ khỏi ExamsService.results
 
----
+Bước 3 [TV2-03]: Fail-safe Supervisor Cron (Bảo hiểm rớt Job)
+  ├── Nâng cấp src/attempts/scheduler/attempt-expiry.supervisor.ts
+  └── Thiết lập @Cron('*/1 * * * *') quét tối đa 50 attempt quá hạn
 
-### 📌 MODULE 7: GIÁM SÁT REALTIME & CÔNG CỤ NHẬP/XUẤT
+Bước 4 [TV2-04]: Write-Behind Buffer (Lưu đáp án qua Redis Hash)
+  ├── AttemptsService.saveAnswer ghi Redis Hash attempt:{attemptId}:answers (< 5ms)
+  └── Đẩy job lưu ngầm vào answer-save-queue -> Worker ghi MongoDB theo mẻ
 
-#### `TASK-16`: Giám sát Phòng thi Trực tiếp (Live Proctoring WebSocket)
-*   ⚙️ **Backend:**
-    *   Tích hợp `@nestjs/websockets` (Socket.io) tạo `ExamProctorGateway`.
-    *   Client thi gửi tín hiệu định kỳ (Heartbeat); Gateway đẩy thông tin trạng thái về phòng giám thị: online/offline, số câu đã tick, cảnh báo vi phạm.
-*   🎨 **Frontend:**
-    *   Xây dựng màn hình Giám thị `/manage/exams/:examId/live`:
-        *   Hiển thị danh sách học sinh theo dạng lưới thẻ (Grid).
-        *   Đèn báo trạng thái: Xanh (Đang thi) / Đỏ (Mất mạng) / Vàng nhấp nháy (Vi phạm chuyển tab).
-        *   Nút bấm: "Đình chỉ thi" hoặc "Thu bài ngay lập tức".
-*   ✅ **Nghiệm thu:** Giám thị thấy trực tiếp màn hình thi của cả lớp cập nhật theo thời gian thực mà không cần F5.
+Bước 5 [TV2-05]: Đồng bộ Dữ liệu Đệm & Nộp bài Chống mất dữ liệu
+  ├── AttemptsService.submit đọc snapshot mới nhất từ Redis Hash
+  ├── Flush/Upsert các đáp án còn thiếu vào MongoDB trước khi chấm điểm
+  └── Xóa Redis Hash tạm sau khi chấm hoàn tất
+```
 
-#### `TASK-17`: Xuất Bảng điểm & Nhập Đề thi từ Excel/Word
-*   ⚙️ **Backend:**
-    *   Cài đặt thư viện `exceljs` và `mammoth` (đọc file `.docx`).
-    *   API `GET /exams/:id/export-results`: Xuất toàn bộ kết quả học sinh ra file `.xlsx`.
-    *   API `POST /exams/:id/import-questions`: Đọc file Excel/Word mẫu, tự động trích xuất nội dung câu hỏi/đáp án đẩy vào bản nháp.
-*   🎨 **Frontend:**
-    *   Tại trang kết quả đề thi: Nút **"Xuất Excel"** tải về bảng điểm hoàn chỉnh.
-    *   Tại trang tạo đề thi: Khung kéo thả file Excel/Word mẫu để nạp nhanh 50 câu hỏi vào form chỉ với 1 click.
-*   ✅ **Nghiệm thu:** Giáo viên không phải nhập tay 50 câu hỏi và dễ dàng tải bảng điểm nộp cho nhà trường.
-
+> [!TIP]
+> **Khả năng làm việc độc lập của bạn:**  
+> Dù Thành viên 1 phụ trách hạ tầng Redis chung, bạn **hoàn toàn có thể chạy Redis độc lập** trên máy của mình (qua Docker: `docker run -d -p 6379:6379 redis:7-alpine`) để triển khai và chạy trọn vẹn test suites cho 5 tasks của mình mà không bị phụ thuộc tiến độ của các bạn khác.

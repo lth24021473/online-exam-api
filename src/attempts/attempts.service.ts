@@ -7,6 +7,8 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Attempt, AttemptStatus, ExamStatus, Prisma, Role } from '@prisma/client';
 import { ExamLeaderboardService } from '../exams/materialized-views/exam-leaderboard.service';
 import { RecordViolationDto } from './dto/record-violation.dto';
@@ -18,6 +20,13 @@ import {
   MAX_SCORE,
 } from './grading';
 import type { GradingStrategy } from './grading';
+import {
+  QUEUE_ATTEMPT_EXPIRY,
+  QUEUE_ANSWER_SAVE,
+  JOB_EXPIRE_ATTEMPT,
+  JOB_SAVE_ANSWER,
+} from '../queue/queue.constants';
+import { RedisService } from '../redis/redis.service';
 
 export { MAX_SCORE };
 
@@ -46,6 +55,13 @@ export class AttemptsService {
     gradingStrategy?: GradingStrategy,
     @Optional()
     private readonly leaderboardService?: ExamLeaderboardService,
+    @InjectQueue(QUEUE_ATTEMPT_EXPIRY)
+    private readonly attemptExpiryQueue?: Queue,
+    @Optional()
+    @InjectQueue(QUEUE_ANSWER_SAVE)
+    private readonly answerSaveQueue?: Queue,
+    @Optional()
+    private readonly redisService?: RedisService,
   ) {
     this.gradingStrategy = gradingStrategy ?? new StandardGradingStrategy();
   }
@@ -138,6 +154,22 @@ export class AttemptsService {
       await this.finalize(attempt);
       return this.start(userId, examId, userRole);
     }
+
+    if (!resumed && this.attemptExpiryQueue) {
+      const delay = Math.max(0, attempt.deadlineAt.getTime() - Date.now());
+      await this.attemptExpiryQueue.add(
+        JOB_EXPIRE_ATTEMPT,
+        {
+          attemptId: attempt.id,
+          examId: attempt.examId,
+        },
+        {
+          delay,
+          jobId: `expire-${attempt.id}`,
+        },
+      );
+    }
+
     return { resumed, ...(await this.buildSession(attempt, exam)) };
   }
 
@@ -191,6 +223,37 @@ export class AttemptsService {
         throw new ConflictException('Selected option does not exist');
       }
       selectedOptionId = option.id;
+    }
+
+    const savedAt = new Date();
+
+    // TV2-04: Write-Behind Buffer via Redis Hash (< 5ms latency)
+    if (this.redisService) {
+      try {
+        const hashKey = `attempt:${attemptId}:answers`;
+        await this.redisService.hset(hashKey, questionId, selectedOptionId);
+        // Retain Redis Hash buffer for 24 hours
+        await this.redisService.expire(hashKey, 86400);
+
+        // Dispatch background job for batch database persistence (Load Leveling)
+        if (this.answerSaveQueue) {
+          await this.answerSaveQueue.add(JOB_SAVE_ANSWER, {
+            attemptId,
+            userId,
+            questionId,
+            selectedOptionId,
+            savedAt: savedAt.getTime(),
+          });
+        }
+
+        return {
+          questionId,
+          selectedOptionIndex,
+          savedAt,
+        };
+      } catch {
+        // Fallback to direct synchronous persistence if Redis is unreachable
+      }
     }
 
     const answer = await this.repo.upsertAnswer(
@@ -247,9 +310,9 @@ export class AttemptsService {
     return this.buildResult(attempt);
   }
 
-  /** Finalize a single expired attempt (used by the background auto-finalizer). */
+  /** Finalize a single expired attempt (used by the background auto-finalizer & worker). */
   async finalizeExpiredAttempt(attempt: Attempt) {
-    return this.finalize(attempt);
+    return this.finalize(attempt, 'TIME_EXPIRED');
   }
 
   async getHistory(
@@ -296,10 +359,43 @@ export class AttemptsService {
   }
 
   private async buildSession(attempt: Attempt, exam: ExamInfo) {
-    const [questions, answers] = await Promise.all([
+    const [questions, dbAnswers] = await Promise.all([
       this.repo.listQuestions(attempt.examId),
       this.repo.listAnswers(attempt.id),
     ]);
+
+    let answers = dbAnswers;
+    if (this.redisService) {
+      try {
+        const buffered = await this.redisService.hgetall(
+          `attempt:${attempt.id}:answers`,
+        );
+        if (buffered && Object.keys(buffered).length > 0) {
+          const answerMap = new Map(
+            dbAnswers.map((a) => [a.questionId, { ...a }]),
+          );
+          for (const [qId, optId] of Object.entries(buffered)) {
+            const existing = answerMap.get(qId);
+            if (existing) {
+              existing.selectedOptionId = optId;
+            } else {
+              const q = questions.find((item) => item.id === qId);
+              const opt = q?.options.find((o) => o.id === optId);
+              answerMap.set(qId, {
+                attemptId: attempt.id,
+                questionId: qId,
+                selectedOptionId: optId,
+                updatedAt: new Date(),
+                selectedOption: { position: opt ? opt.position : 0 },
+              } as any);
+            }
+          }
+          answers = Array.from(answerMap.values());
+        }
+      } catch {
+        // Fallback to db answers if Redis lookup fails
+      }
+    }
 
     let sessionQuestions: {
       id: string;
@@ -405,7 +501,10 @@ export class AttemptsService {
           terminatedReason ??
           (now > current.deadlineAt ? 'TIME_EXPIRED' : 'NORMAL_SUBMIT');
         return {
-          submittedAt: now > current.deadlineAt ? current.deadlineAt : now,
+          submittedAt:
+            reason === 'TIME_EXPIRED' || now > current.deadlineAt
+              ? current.deadlineAt
+              : now,
           correctCount,
           incorrectCount,
           score,
@@ -563,10 +662,15 @@ export class AttemptsService {
     let result: any = null;
     if (res.shouldTerminate) {
       const attempt = await this.repo.findById(attemptId);
-      if (attempt && attempt.status === AttemptStatus.IN_PROGRESS) {
-        const finalized = await this.finalize(attempt, 'EXCEEDED_VIOLATIONS');
-        submitted = true;
-        result = await this.buildResult(finalized);
+      if (attempt) {
+        const finalized =
+          attempt.status === AttemptStatus.IN_PROGRESS
+            ? await this.finalize(attempt, 'EXCEEDED_VIOLATIONS')
+            : attempt;
+        if (finalized) {
+          submitted = finalized.status === AttemptStatus.SUBMITTED;
+          result = await this.buildResult(finalized);
+        }
       }
     }
 

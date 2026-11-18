@@ -15,6 +15,8 @@ import { AttemptsModule } from './attempts/attempts.module';
 import { HealthModule } from './health/health.module';
 import { StorageModule } from './storage/storage.module';
 import { validate } from './config/env.validation';
+import { QueueModule } from './queue/queue.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { validate } from './config/env.validation';
       },
     ]),
     PrismaModule,
+    RedisModule,
+    QueueModule,
     AuthModule,
     UsersModule,
     ClassroomsModule,
