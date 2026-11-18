@@ -18,6 +18,7 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { UsersRepository } from '../users/users.repository';
 import { UsersController } from '../users/users.controller';
+import { StorageService } from '../storage/storage.service';
 import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
 import { Role } from '@prisma/client';
@@ -114,6 +115,10 @@ describe('Authentication HTTP flow', () => {
         },
         { provide: UsersRepository, useValue: repository },
         { provide: MailService, useValue: mailService },
+        {
+          provide: StorageService,
+          useValue: { generatePresignedUploadUrl: jest.fn() },
+        },
       ],
     }).compile();
     app = module.createNestApplication();

@@ -11,6 +11,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma.service';
 import { AttemptsService } from '../src/attempts/attempts.service';
 import { AuthService } from '../src/auth/auth.service';
+import { RedisService } from '../src/redis/redis.service';
 
 const USER_A_ID = '111111111111111111111111';
 const USER_B_ID = '222222222222222222222222';
@@ -23,6 +24,7 @@ describe('Health & Throttler (e2e)', () => {
   let userAToken: string;
   let userBToken: string;
   let mongoPingSucceeds = true;
+  let redisPingMode: 'pong' | 'non-pong' | 'error' = 'pong';
 
   const mockAttemptsService = {
     saveAnswer: jest.fn().mockResolvedValue({
@@ -58,6 +60,7 @@ describe('Health & Throttler (e2e)', () => {
 
   beforeEach(async () => {
     mongoPingSucceeds = true;
+    redisPingMode = 'pong';
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -90,6 +93,18 @@ describe('Health & Throttler (e2e)', () => {
             throw new Error('Mongo connection refused');
           }
           return { ok: 1 };
+        }),
+      })
+      .overrideProvider(RedisService)
+      .useValue({
+        ping: jest.fn(async () => {
+          if (redisPingMode === 'error') {
+            throw new Error('Redis connection refused');
+          }
+          if (redisPingMode === 'non-pong') {
+            return 'OK';
+          }
+          return 'PONG';
         }),
       })
       .overrideProvider(AttemptsService)
@@ -130,40 +145,147 @@ describe('Health & Throttler (e2e)', () => {
   });
 
   describe('Health Checks', () => {
-    it('/health/live returns 200 ok', async () => {
+    it.each(['/health/live', '/api/v1/health/live'])(
+      '%s returns 200 ok even when both MongoDB and Redis are down',
+      async (route) => {
+        mongoPingSucceeds = false;
+        redisPingMode = 'error';
+
+        const response = await request(app.getHttpServer())
+          .get(route)
+          .expect(200);
+
+        expect(response.body.status).toBe('ok');
+      },
+    );
+
+    it.each([
+      '/health',
+      '/api/v1/health',
+      '/health/ready',
+      '/api/v1/health/ready',
+    ])('%s returns 200 when both MongoDB and Redis are healthy', async (route) => {
       const response = await request(app.getHttpServer())
-        .get('/health/live')
-        .expect(200);
-
-      expect(response.body.status).toBe('ok');
-    });
-
-    it('/api/v1/health/live also returns 200 ok', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/health/live')
-        .expect(200);
-
-      expect(response.body.status).toBe('ok');
-    });
-
-    it('/health/ready returns 200 when database is healthy', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/health/ready')
+        .get(route)
         .expect(200);
 
       expect(response.body.status).toBe('ok');
       expect(response.body.info?.database?.status).toBe('up');
+      expect(response.body.info?.redis?.status).toBe('up');
     });
 
-    it('/health/ready returns 503 when database ping fails', async () => {
+    it.each([
+      '/health',
+      '/api/v1/health',
+      '/health/ready',
+      '/api/v1/health/ready',
+    ])('%s returns 503 when MongoDB ping fails', async (route) => {
       mongoPingSucceeds = false;
 
       const response = await request(app.getHttpServer())
-        .get('/health/ready')
+        .get(route)
         .expect(503);
 
       expect(response.body.status).toBe('error');
       expect(response.body.error?.database?.status).toBe('down');
+      expect(response.body.info?.redis?.status).toBe('up');
+    });
+
+    it.each([
+      '/health',
+      '/api/v1/health',
+      '/health/ready',
+      '/api/v1/health/ready',
+    ])('%s returns 503 when Redis ping throws', async (route) => {
+      redisPingMode = 'error';
+
+      const response = await request(app.getHttpServer())
+        .get(route)
+        .expect(503);
+
+      expect(response.body.status).toBe('error');
+      expect(response.body.info?.database?.status).toBe('up');
+      expect(response.body.error?.redis?.status).toBe('down');
+    });
+
+    it.each([
+      '/health',
+      '/api/v1/health',
+      '/health/ready',
+      '/api/v1/health/ready',
+    ])(
+      '%s returns 503 when Redis ping returns a non-PONG response',
+      async (route) => {
+        redisPingMode = 'non-pong';
+
+        const response = await request(app.getHttpServer())
+          .get(route)
+          .expect(503);
+
+        expect(response.body.status).toBe('error');
+        expect(response.body.info?.database?.status).toBe('up');
+        expect(response.body.error?.redis?.status).toBe('down');
+      },
+    );
+
+    it('returns 503 on readiness/root and 200 on liveness when RedisService is unconfigured', async () => {
+      const prevRedisUrl = process.env.REDIS_URL;
+      const prevRedisHost = process.env.REDIS_HOST;
+      delete process.env.REDIS_URL;
+      delete process.env.REDIS_HOST;
+
+      let unconfiguredApp: INestApplication<App> | undefined;
+      try {
+        const unconfiguredModule = await Test.createTestingModule({
+          imports: [AppModule],
+        })
+          .overrideProvider(PrismaService)
+          .useValue({
+            $runCommandRaw: jest.fn().mockResolvedValue({ ok: 1 }),
+          })
+          .compile();
+
+        unconfiguredApp = unconfiguredModule.createNestApplication();
+        unconfiguredApp.setGlobalPrefix('api/v1', {
+          exclude: [
+            'health',
+            'health/(.*)',
+            'api/v1/health',
+            'api/v1/health/(.*)',
+          ],
+        });
+        await unconfiguredApp.init();
+
+        const readyResponse = await request(unconfiguredApp.getHttpServer())
+          .get('/health/ready')
+          .expect(503);
+        expect(readyResponse.body.status).toBe('error');
+        expect(readyResponse.body.info?.database?.status).toBe('up');
+        expect(readyResponse.body.error?.redis?.status).toBe('down');
+
+        await request(unconfiguredApp.getHttpServer())
+          .get('/api/v1/health/ready')
+          .expect(503);
+
+        const liveResponse = await request(unconfiguredApp.getHttpServer())
+          .get('/health/live')
+          .expect(200);
+        expect(liveResponse.body.status).toBe('ok');
+
+        await request(unconfiguredApp.getHttpServer())
+          .get('/api/v1/health/live')
+          .expect(200);
+      } finally {
+        if (unconfiguredApp) {
+          await unconfiguredApp.close();
+        }
+        if (prevRedisUrl !== undefined) {
+          process.env.REDIS_URL = prevRedisUrl;
+        }
+        if (prevRedisHost !== undefined) {
+          process.env.REDIS_HOST = prevRedisHost;
+        }
+      }
     });
 
     it('health endpoints are not throttled even with repeated requests', async () => {

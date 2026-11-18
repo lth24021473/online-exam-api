@@ -13,6 +13,8 @@ import { ExamsModule } from './exams/exams.module';
 import { QuestionsModule } from './exams/questions/questions.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { HealthModule } from './health/health.module';
+import { StorageModule } from './storage/storage.module';
+import { validate } from './config/env.validation';
 import { QueueModule } from './queue/queue.module';
 import { RedisModule } from './redis/redis.module';
 
@@ -20,6 +22,7 @@ import { RedisModule } from './redis/redis.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate,
     }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
@@ -39,6 +42,7 @@ import { RedisModule } from './redis/redis.module';
     QuestionsModule,
     AttemptsModule,
     HealthModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [

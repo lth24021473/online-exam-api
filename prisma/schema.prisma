@@ -209,3 +209,29 @@ model AttemptAnswer {
   @@index([selectedOptionId])
   @@map("Answer")
 }
+
+model ExamLeaderboard {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  examId          String   @db.ObjectId
+  userId          String   @db.ObjectId
+  fullName        String
+  avatar          String?
+  bestScore       Float
+  durationSeconds Int
+  submittedAt     DateTime
+
+  @@unique([examId, userId])
+  @@index([examId, bestScore(sort: Desc), durationSeconds(sort: Asc)])
+}
+
+model ExamSummaryStats {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  examId         String   @unique @db.ObjectId
+  totalAttempts  Int      @default(0)
+  submittedCount Int      @default(0)
+  averageScore   Float    @default(0)
+  highestScore   Float    @default(0)
+  lowestScore    Float    @default(0)
+  updatedAt      DateTime @updatedAt
+}
+

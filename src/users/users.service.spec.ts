@@ -90,6 +90,58 @@ describe('UsersService', () => {
       expect(result).not.toHaveProperty('authVersion');
     });
 
+    it('persists cover URL and clears avatar when avatar is null', async () => {
+      repository.findById!.mockResolvedValue(mockUser);
+
+      const dto: UpdateProfileDto = {
+        avatar: null,
+        cover: 'https://s3.example.com/covers/user-123.jpg',
+      };
+
+      const updatedUser = {
+        ...mockUser,
+        avatar: null,
+        cover: 'https://s3.example.com/covers/user-123.jpg',
+        updatedAt: new Date('2026-02-02T00:00:00Z'),
+      };
+      repository.updateProfile!.mockResolvedValue(updatedUser);
+
+      const result = await service.updateProfile(mockUser.id, dto);
+
+      expect(repository.updateProfile).toHaveBeenCalledWith(mockUser.id, {
+        avatar: null,
+        cover: 'https://s3.example.com/covers/user-123.jpg',
+      });
+      expect(result.avatar).toBeNull();
+      expect(result.cover).toBe('https://s3.example.com/covers/user-123.jpg');
+      expect(result).not.toHaveProperty('passwordHash');
+      expect(result).not.toHaveProperty('authVersion');
+    });
+
+    it('omits undefined properties on partial updates without overwriting existing images', async () => {
+      repository.findById!.mockResolvedValue(mockUser);
+
+      const dto = plainToInstance(UpdateProfileDto, {
+        fullName: 'Nguyễn Văn C',
+      });
+
+      const updatedUser = {
+        ...mockUser,
+        fullName: 'Nguyễn Văn C',
+        updatedAt: new Date('2026-02-03T00:00:00Z'),
+      };
+      repository.updateProfile!.mockResolvedValue(updatedUser);
+
+      const result = await service.updateProfile(mockUser.id, dto);
+
+      const passedPayload = repository.updateProfile!.mock.calls[0][1];
+      expect(passedPayload).toEqual({ fullName: 'Nguyễn Văn C' });
+      expect(Object.prototype.hasOwnProperty.call(passedPayload, 'avatar')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(passedPayload, 'cover')).toBe(false);
+      expect(result.avatar).toBe(mockUser.avatar);
+      expect(result.cover).toBe(mockUser.cover);
+    });
+
     it('throws NotFoundException when updating non-existent user', async () => {
       repository.findById!.mockResolvedValue(null);
 
@@ -158,37 +210,91 @@ describe('UsersService', () => {
   });
 
   describe('UpdateProfileDto validation', () => {
-    it('accepts avatar and cover within 2,000,000 characters', async () => {
+    it('accepts valid URLs within 500 characters for avatar and cover', async () => {
       const dto = plainToInstance(UpdateProfileDto, {
-        avatar: 'a'.repeat(1000),
-        cover: 'c'.repeat(1000),
+        avatar: 'https://s3.example.com/avatars/user-123.jpg',
+        cover: 'https://cdn.example.com/covers/user-123.webp',
       });
       const errors = await validate(dto);
       expect(errors).toHaveLength(0);
     });
 
-    it('rejects avatar exceeding 2,000,000 characters with custom message', async () => {
+    it('accepts exact 500-character URLs for avatar and cover', async () => {
+      const prefix = 'https://s3.example.com/avatars/';
+      const exact500Url = prefix + 'a'.repeat(500 - prefix.length);
+      expect(exact500Url).toHaveLength(500);
+
       const dto = plainToInstance(UpdateProfileDto, {
-        avatar: 'a'.repeat(2000001),
+        avatar: exact500Url,
+        cover: exact500Url,
       });
       const errors = await validate(dto);
-      expect(errors.length).toBeGreaterThan(0);
-      const avatarError = errors.find((e) => e.property === 'avatar');
-      expect(avatarError?.constraints?.maxLength).toBe(
-        'Dữ liệu ảnh không được vượt quá 2MB',
-      );
+      expect(errors).toHaveLength(0);
     });
 
-    it('rejects cover exceeding 2,000,000 characters with custom message', async () => {
-      const dto = plainToInstance(UpdateProfileDto, {
-        cover: 'c'.repeat(2000001),
+    it('accepts null and undefined for avatar and cover', async () => {
+      const nullDto = plainToInstance(UpdateProfileDto, {
+        avatar: null,
+        cover: null,
       });
-      const errors = await validate(dto);
-      expect(errors.length).toBeGreaterThan(0);
-      const coverError = errors.find((e) => e.property === 'cover');
-      expect(coverError?.constraints?.maxLength).toBe(
-        'Dữ liệu ảnh không được vượt quá 2MB',
-      );
+      expect(await validate(nullDto)).toHaveLength(0);
+      expect(nullDto.avatar).toBeNull();
+      expect(nullDto.cover).toBeNull();
+
+      const omittedDto = plainToInstance(UpdateProfileDto, {});
+      expect(await validate(omittedDto)).toHaveLength(0);
+      expect(omittedDto.avatar).toBeUndefined();
+      expect(omittedDto.cover).toBeUndefined();
+    });
+
+    it.each([
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'data:image/jpeg;base64,/9j/4AAQSkZJRg==',
+    ])('rejects Base64 data URI (%s) for avatar and cover', async (base64) => {
+      const avatarDto = plainToInstance(UpdateProfileDto, { avatar: base64 });
+      const avatarErrors = await validate(avatarDto);
+      const avatarError = avatarErrors.find((e) => e.property === 'avatar');
+      expect(avatarError?.constraints?.isUrl).toBeDefined();
+
+      const coverDto = plainToInstance(UpdateProfileDto, { cover: base64 });
+      const coverErrors = await validate(coverDto);
+      const coverError = coverErrors.find((e) => e.property === 'cover');
+      expect(coverError?.constraints?.isUrl).toBeDefined();
+    });
+
+    it.each(['not-a-url', '', '   ', 'javascript:alert(1)', 12345])(
+      'rejects invalid non-URL value (%p) for avatar and cover',
+      async (invalidValue) => {
+        const avatarDto = plainToInstance(UpdateProfileDto, {
+          avatar: invalidValue,
+        });
+        const avatarErrors = await validate(avatarDto);
+        const avatarError = avatarErrors.find((e) => e.property === 'avatar');
+        expect(avatarError?.constraints?.isUrl).toBeDefined();
+
+        const coverDto = plainToInstance(UpdateProfileDto, {
+          cover: invalidValue,
+        });
+        const coverErrors = await validate(coverDto);
+        const coverError = coverErrors.find((e) => e.property === 'cover');
+        expect(coverError?.constraints?.isUrl).toBeDefined();
+      },
+    );
+
+    it('rejects URLs exceeding 500 characters for avatar and cover', async () => {
+      const prefix = 'https://s3.example.com/avatars/';
+      const url501 = prefix + 'a'.repeat(501 - prefix.length);
+      expect(url501).toHaveLength(501);
+
+      const avatarDto = plainToInstance(UpdateProfileDto, { avatar: url501 });
+      const avatarErrors = await validate(avatarDto);
+      const avatarError = avatarErrors.find((e) => e.property === 'avatar');
+      expect(avatarError?.constraints?.maxLength).toBeDefined();
+
+      const coverDto = plainToInstance(UpdateProfileDto, { cover: url501 });
+      const coverErrors = await validate(coverDto);
+      const coverError = coverErrors.find((e) => e.property === 'cover');
+      expect(coverError?.constraints?.maxLength).toBeDefined();
     });
   });
 });

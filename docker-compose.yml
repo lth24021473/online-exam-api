@@ -5,12 +5,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - '3000:3000'
     env_file:
       - .env
     environment:
       DATABASE_URL: mongodb://mongo:27017/online_exam?replicaSet=rs0
+      REDIS_URL: redis://redis:6379
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
@@ -19,20 +21,17 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          node -e "require('http').get('http://localhost:3000/api/v1/health', (r)
-          => process.exit(r.statusCode === 200 ? 0 : 1))"
-      interval: 10s
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/health/ready"]
+      interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 3
+      start_period: 20s
 
   mongo:
     image: mongo:8.0
+    restart: unless-stopped
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports: 
+    ports:
       - '27017:27017'
     volumes:
       - mongo_data:/data/db
@@ -48,6 +47,12 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - '6379:6379'

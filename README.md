@@ -35,7 +35,8 @@ Trong thư mục frontend riêng `D:/online-exam-front`, cấu hình `VITE_API_U
 | `POST /auth/reset-password` | Đặt lại mật khẩu bằng mã/token nhận qua email | Khách |
 | `POST /auth/change-password` | Đổi mật khẩu chủ động và cấp lại access token mới | Đã đăng nhập |
 | `GET /users/me` | Thông tin tài khoản hiện tại | Đã đăng nhập |
-| `PATCH /users/me` | Cập nhật thông tin hồ sơ cá nhân | Đã đăng nhập |
+| `POST /users/me/upload-url` | Cấp presigned S3 `uploadUrl` và `filePublicUrl` để tải ảnh `avatar`/`cover` | Đã đăng nhập |
+| `PATCH /users/me` | Cập nhật thông tin hồ sơ cá nhân (`avatar`/`cover` chỉ nhận URL <= 500 ký tự hoặc `null` để xóa) | Đã đăng nhập |
 | `GET /admin/users` | Danh sách tài khoản | ADMIN |
 | `GET /admin/users/:id` | Chi tiết tài khoản | ADMIN |
 | `PATCH /admin/users/:id/role` | Đổi quyền với `{ "role": "STUDENT" }` (hoặc EXAM_MANAGER/ADMIN) | ADMIN |
@@ -43,6 +44,23 @@ Trong thư mục frontend riêng `D:/online-exam-front`, cấu hình `VITE_API_U
 Đăng ký không cho người dùng tự cấp quyền. Guard kiểm tra tài khoản hiện tại, phiên bản quyền và danh sách JWT bị thu hồi tại mọi request cần xác thực. Đăng xuất lưu **hash** JWT và thời hạn vào MongoDB, nên khởi động lại API không khôi phục token đã thu hồi. Đăng nhập lần khác tạo JWT mới. Đổi quyền rồi đổi lại không khôi phục JWT cũ. ID ADMIN không hợp lệ trả 400; sai quyền trả 403; tài khoản/token không còn hợp lệ trả 401.
 
 Frontend có đăng ký/đăng nhập, kiểm tra phiên khi tải lại, điều hướng theo cả ba quyền, đăng xuất trong **Cài đặt**, và quản lý tài khoản tại `/admin/users`. Đổi quyền/xóa chính mình kết thúc phiên tương ứng; response trễ từ phiên trước không xóa phiên mới. Mất mạng khi kiểm tra phiên hiển thị lỗi/thử lại.
+
+### Frontend / Swagger Contract: Cập nhật Avatar & Cover (Valet Key / S3 Flow)
+
+Backend giữ nguyên bộ route chuẩn `/api/v1/users/me/upload-url` và `/api/v1/users/me` để đảm bảo tương thích ngược hoàn toàn với client và test hiện có. `PATCH /api/v1/users/me` **không** chấp nhận chuỗi Base64 (`data:image/...`); client phải upload ảnh nhị phân trực tiếp lên S3/MinIO theo 3 bước:
+
+1. **Bước 1 — Lấy presigned upload URL**:
+   - Gọi `POST /api/v1/users/me/upload-url` (kèm `Authorization: Bearer <accessToken>`) với body:
+     ```json
+     { "fileName": "avatar.jpg", "mimeType": "image/jpeg", "folder": "avatars" }
+     ```
+     (`mimeType`: `image/jpeg | image/png | image/webp`; `folder`: `avatars | covers`).
+   - Response `200 OK`: `{ "uploadUrl": "...", "filePublicUrl": "https://s3.example.com/avatars/user-123.jpg", "key": "...", "expiresIn": 300 }`.
+2. **Bước 2 — Upload file nhị phân lên S3/MinIO**:
+   - Gửi `PUT <uploadUrl>` trực tiếp tới Object Storage với body là dữ liệu ảnh nhị phân và header `Content-Type: <mimeType>` khớp với Bước 1 (**không** đính kèm header `Authorization`).
+3. **Bước 3 — Lưu URL công khai vào hồ sơ**:
+   - Gọi `PATCH /api/v1/users/me` với `{ "avatar": "<filePublicUrl>" }` và/hoặc `{ "cover": "<filePublicUrl>" }`, hoặc gửi `null` (`{ "avatar": null }`) để xóa ảnh hiện tại.
+   - **Lưu ý xác thực URL (`@IsUrl()` mặc định)**: `avatar` và `cover` phải là URL hợp lệ tối đa 500 ký tự và có TLD/IP hợp lệ (ví dụ `https://s3.example.com/avatars/user-123.jpg` hoặc `http://127.0.0.1:9000/...`). Giá trị `http://localhost:...` bị `@IsUrl()` mặc định từ chối với HTTP `400`; khi chạy MinIO local, cấu hình `S3_PUBLIC_URL_PREFIX` dùng domain hợp lệ hoặc `127.0.0.1`.
 
 ## Quản lý đề thi, câu hỏi và kết quả
 

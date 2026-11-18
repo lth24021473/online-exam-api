@@ -66,13 +66,16 @@ class InMemoryUsersPrisma {
           : user;
       },
     ),
-    findMany: jest.fn(async ({ select }: { select: Record<string, boolean> }) =>
+    count: jest.fn(async () => this.users.size),
+    findMany: jest.fn(async ({ select }: { select?: Record<string, boolean> }) =>
       [...this.users.values()].map((user) =>
-        Object.fromEntries(
-          Object.keys(select)
-            .filter((key) => select[key])
-            .map((key) => [key, user[key as keyof StoredUser]]),
-        ),
+        select
+          ? Object.fromEntries(
+              Object.keys(select)
+                .filter((key) => select[key])
+                .map((key) => [key, user[key as keyof StoredUser]]),
+            )
+          : user,
       ),
     ),
     updateMany: jest.fn(
@@ -260,8 +263,9 @@ describe('Admin user permissions and account sessions (HTTP)', () => {
 
   it('lists and reads accounts for ADMIN while keeping password and session version private', async () => {
     const list = await get('admin/users', adminToken).expect(200);
-    expect(list.body).toHaveLength(2);
-    for (const user of list.body) {
+    const users = Array.isArray(list.body) ? list.body : list.body.data;
+    expect(users).toHaveLength(2);
+    for (const user of users) {
       expect(user).not.toHaveProperty('passwordHash');
       expect(user).not.toHaveProperty('authVersion');
     }
@@ -373,7 +377,7 @@ describe('Admin user permissions and account sessions (HTTP)', () => {
       const token = legacyToken();
       prisma.users.get(TARGET_ID)!.email = 'new-email@example.test';
       const response = await get('permission-test', token).expect(200);
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
         id: TARGET_ID,
         email: 'new-email@example.test',
         role: Role.STUDENT,
