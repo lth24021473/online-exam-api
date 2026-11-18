@@ -14,6 +14,7 @@ import { QuestionsModule } from './exams/questions/questions.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { HealthModule } from './health/health.module';
 import { QueueModule } from './queue/queue.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { QueueModule } from './queue/queue.module';
       },
     ]),
     PrismaModule,
+    RedisModule,
     QueueModule,
     AuthModule,
     UsersModule,
