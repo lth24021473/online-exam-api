@@ -397,4 +397,113 @@ describe('AttemptsRepository write conflict retries', () => {
       expect(result).toEqual(violations);
     });
   });
+
+  describe('upsertAnswerFromBuffer & upsertAnswersBatch (TV2-04)', () => {
+    it('upsertAnswerFromBuffer updates answerVersion and upserts answer', async () => {
+      tx.attempt.findFirst.mockResolvedValue({
+        id: attempt.id,
+        status: AttemptStatus.IN_PROGRESS,
+      });
+      tx.attempt.updateMany.mockResolvedValue({ count: 1 });
+      tx.attemptAnswer.upsert.mockResolvedValue(answer);
+
+      const result = await repository.upsertAnswerFromBuffer(
+        attempt.id,
+        attempt.userId,
+        'question-id',
+        'option-id',
+      );
+
+      expect(tx.attempt.findFirst).toHaveBeenCalledWith({
+        where: { id: attempt.id, userId: attempt.userId },
+        select: { id: true, status: true },
+      });
+      expect(tx.attempt.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: attempt.id,
+          userId: attempt.userId,
+          status: AttemptStatus.IN_PROGRESS,
+        },
+        data: { answerVersion: { increment: 1 } },
+      });
+      expect(tx.attemptAnswer.upsert).toHaveBeenCalledWith({
+        where: {
+          attemptId_questionId: {
+            attemptId: attempt.id,
+            questionId: 'question-id',
+          },
+        },
+        create: {
+          attemptId: attempt.id,
+          questionId: 'question-id',
+          selectedOptionId: 'option-id',
+        },
+        update: { selectedOptionId: 'option-id' },
+        select: expect.any(Object),
+      });
+      expect(result).toEqual(answer);
+    });
+
+    it('upsertAnswerFromBuffer throws NotFoundException if attempt is missing', async () => {
+      tx.attempt.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.upsertAnswerFromBuffer(
+          'missing-id',
+          attempt.userId,
+          'question-id',
+          'option-id',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('upsertAnswerFromBuffer throws ConflictException if attempt is not IN_PROGRESS', async () => {
+      tx.attempt.findFirst.mockResolvedValue({
+        id: attempt.id,
+        status: AttemptStatus.SUBMITTED,
+      });
+
+      await expect(
+        repository.upsertAnswerFromBuffer(
+          attempt.id,
+          attempt.userId,
+          'question-id',
+          'option-id',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('upsertAnswersBatch returns empty array when given empty input', async () => {
+      const result = await repository.upsertAnswersBatch(
+        attempt.id,
+        attempt.userId,
+        [],
+      );
+      expect(result).toEqual([]);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('upsertAnswersBatch persists all answers in batch', async () => {
+      tx.attempt.findFirst.mockResolvedValue({
+        id: attempt.id,
+        status: AttemptStatus.IN_PROGRESS,
+      });
+      tx.attempt.updateMany.mockResolvedValue({ count: 1 });
+      tx.attemptAnswer.upsert.mockResolvedValue(answer);
+
+      const batchData = [
+        { questionId: 'q1', selectedOptionId: 'opt-1' },
+        { questionId: 'q2', selectedOptionId: 'opt-2' },
+      ];
+
+      const results = await repository.upsertAnswersBatch(
+        attempt.id,
+        attempt.userId,
+        batchData,
+      );
+
+      expect(results).toHaveLength(2);
+      expect(tx.attemptAnswer.upsert).toHaveBeenCalledTimes(2);
+    });
+  });
 });

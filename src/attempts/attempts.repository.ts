@@ -299,6 +299,111 @@ export class AttemptsRepository {
     );
   }
 
+  /**
+   * Persists a buffered answer from Redis to MongoDB.
+   * Tolerates jobs executed right as or after the deadline as long as the attempt is still IN_PROGRESS (not finalized).
+   */
+  upsertAnswerFromBuffer(
+    attemptId: string,
+    userId: string,
+    questionId: string,
+    selectedOptionId: string,
+  ) {
+    return this.withWriteConflictRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const attempt = await tx.attempt.findFirst({
+          where: { id: attemptId, userId },
+          select: { id: true, status: true },
+        });
+
+        if (!attempt) {
+          throw new NotFoundException('Attempt not found');
+        }
+
+        if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+          throw new ConflictException('Attempt is no longer active');
+        }
+
+        await tx.attempt.updateMany({
+          where: {
+            id: attemptId,
+            userId,
+            status: AttemptStatus.IN_PROGRESS,
+          },
+          data: { answerVersion: { increment: 1 } },
+        });
+
+        return tx.attemptAnswer.upsert({
+          where: { attemptId_questionId: { attemptId, questionId } },
+          create: { attemptId, questionId, selectedOptionId },
+          update: { selectedOptionId },
+          select: gradingAnswerSelect,
+        });
+      }),
+    );
+  }
+
+  /**
+   * Batch upserts multiple answers in a single MongoDB transaction (Write-Behind Load Leveling).
+   */
+  upsertAnswersBatch(
+    attemptId: string,
+    userId: string,
+    answers: Array<{ questionId: string; selectedOptionId: string }>,
+  ) {
+    if (!answers || answers.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.withWriteConflictRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const attempt = await tx.attempt.findFirst({
+          where: { id: attemptId, userId },
+          select: { id: true, status: true },
+        });
+
+        if (!attempt) {
+          throw new NotFoundException('Attempt not found');
+        }
+
+        if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+          throw new ConflictException('Attempt is no longer active');
+        }
+
+        await tx.attempt.updateMany({
+          where: {
+            id: attemptId,
+            userId,
+            status: AttemptStatus.IN_PROGRESS,
+          },
+          data: { answerVersion: { increment: 1 } },
+        });
+
+        const results = [];
+        for (const ans of answers) {
+          const res = await tx.attemptAnswer.upsert({
+            where: {
+              attemptId_questionId: {
+                attemptId,
+                questionId: ans.questionId,
+              },
+            },
+            create: {
+              attemptId,
+              questionId: ans.questionId,
+              selectedOptionId: ans.selectedOptionId,
+            },
+            update: { selectedOptionId: ans.selectedOptionId },
+            select: gradingAnswerSelect,
+          });
+          results.push(res);
+        }
+
+        return results;
+      }),
+    );
+  }
+
   /** Save grading and transition status using the same answer snapshot. */
   submitInProgress(attemptId: string, userId: string, grade: GradeAttempt) {
     return this.withWriteConflictRetry(() =>
